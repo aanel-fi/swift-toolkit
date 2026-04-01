@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. Take a look at [the migration guide](docs/Migration%20Guide.md) to upgrade between two major versions.
 
+
+## [Unreleased: swift6]
+
+### Changed
+
+#### Shared
+
+* OPDS models (`Feed`, `Group`, `Facet`, `OpdsMetadata`) are now structs with value semantics.
+
+
 ## [Unreleased]
 
 ### Added

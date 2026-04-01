@@ -17,7 +17,7 @@ public protocol ResourceContentExtractor {
 public typealias _ResourceContentExtractor = ResourceContentExtractor
 
 /// Creates a `ResourceContentExtractor` for a given resource and media type.
-public protocol ResourceContentExtractorFactory {
+public protocol ResourceContentExtractorFactory: Sendable {
     /// Creates a `ResourceContentExtractor` instance for the given `resource`.
     /// Returns nil if the resource format is not supported.
     func makeExtractor(for resource: Resource, mediaType: MediaType) -> ResourceContentExtractor?
@@ -27,7 +27,7 @@ public protocol ResourceContentExtractorFactory {
 public typealias _ResourceContentExtractorFactory = ResourceContentExtractorFactory
 
 /// Default `ResourceContentExtractorFactory` supporting HTML resources.
-public class DefaultResourceContentExtractorFactory: ResourceContentExtractorFactory {
+public class DefaultResourceContentExtractorFactory: ResourceContentExtractorFactory, Sendable {
     public init() {}
 
     public func makeExtractor(for resource: Resource, mediaType: MediaType) -> ResourceContentExtractor? {

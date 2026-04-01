@@ -75,7 +75,6 @@ The free functions `serializeJSONString` and `serializeJSONData` have been repla
 +let data = locator.jsonData()
 ```
 
-
 ## 3.8.0
 
 ### Removing the HTTP Server from the EPUB Navigator
