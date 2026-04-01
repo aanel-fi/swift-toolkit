@@ -44,7 +44,7 @@ public struct PointerEvent: Equatable {
     }
 
     /// Phase of a pointer event.
-    public enum Phase: Equatable, CustomStringConvertible {
+    public enum Phase: Equatable, CustomStringConvertible, Sendable {
         /// Fired when a pointer becomes active.
         case down
 
@@ -102,7 +102,7 @@ public enum Pointer: Equatable, CustomStringConvertible {
 }
 
 /// Type of a pointer.
-public enum PointerType: Equatable, CaseIterable {
+public enum PointerType: Equatable, CaseIterable, Sendable {
     case touch
     case mouse
 }
@@ -134,7 +134,7 @@ public struct MousePointer: Identifiable, Equatable {
 /// Represents a set of mouse buttons.
 ///
 /// The values are derived from https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons#value
-public struct MouseButtons: OptionSet, Equatable, CustomStringConvertible {
+public struct MouseButtons: OptionSet, Equatable, CustomStringConvertible, Sendable {
     /// Main button, usually the left button.
     public static let main = MouseButtons(rawValue: 1 << 0)
 

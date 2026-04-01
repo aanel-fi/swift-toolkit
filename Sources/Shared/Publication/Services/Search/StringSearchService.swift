@@ -15,7 +15,7 @@ import Foundation
 ///
 /// The actual search is implemented by the provided `searchAlgorithm`.
 @available(*, deprecated, renamed: "ContentSearchService", message: "Use ContentSearchService for new integrations.")
-public class StringSearchService: SearchService {
+public final class StringSearchService: SearchService, Sendable {
     public static func makeFactory(
         snippetLength: Int = 200,
         searchAlgorithm: StringSearchAlgorithm = BasicStringSearchAlgorithm(),

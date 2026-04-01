@@ -7,7 +7,7 @@
 import Foundation
 
 /// Implements the actual search algorithm in sanitized text content.
-public protocol StringSearchAlgorithm {
+public protocol StringSearchAlgorithm: Sendable {
     /// Default value for the search options available with this algorithm.
     ///
     /// If an option does not have a value, it is not supported by the algorithm.
@@ -23,7 +23,7 @@ public protocol StringSearchAlgorithm {
 }
 
 /// A basic `StringSearchAlgorithm` using the native `String.range(of:)` APIs.
-public class BasicStringSearchAlgorithm: StringSearchAlgorithm {
+public final class BasicStringSearchAlgorithm: StringSearchAlgorithm, Sendable {
     public let options: SearchOptions = .init(
         caseSensitive: false,
         diacriticSensitive: false,

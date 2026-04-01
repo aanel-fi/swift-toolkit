@@ -38,8 +38,8 @@ public protocol AudioSessionManaging {
 
 /// Manages an activated `AVAudioSession`.
 @MainActor
-public final class AudioSession: AudioSessionManaging, Loggable {
-    public struct Configuration: Equatable {
+public final class AudioSession: AudioSessionManaging, Sendable, Loggable {
+    public struct Configuration: Sendable, Equatable {
         public let category: AVAudioSession.Category
         public let mode: AVAudioSession.Mode
         public let routeSharingPolicy: AVAudioSession.RouteSharingPolicy

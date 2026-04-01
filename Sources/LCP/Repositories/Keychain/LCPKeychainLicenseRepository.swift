@@ -8,7 +8,7 @@ import Foundation
 import ReadiumShared
 
 /// Errors occurring in ``LCPKeychainLicenseRepository``.
-public enum LCPKeychainLicenseRepositoryError: Error {
+public enum LCPKeychainLicenseRepositoryError: Error, Sendable {
     /// The license with the given `id` was not found in the repository.
     case licenseNotFound(id: LicenseDocument.ID)
 
