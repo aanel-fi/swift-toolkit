@@ -7,9 +7,9 @@
 import Foundation
 import ReadiumShared
 
-final class DeviceService: Loggable {
-    private let repository: LCPLicenseRepository
-    private let httpClient: HTTPClient
+final class DeviceService: Sendable, Loggable {
+    private let repository: any LCPLicenseRepository
+    private let httpClient: any HTTPClient
 
     /// Returns the device's name.
     let name: String
@@ -34,8 +34,8 @@ final class DeviceService: Loggable {
     init(
         deviceName: String,
         deviceId: String?,
-        repository: LCPLicenseRepository,
-        httpClient: HTTPClient,
+        repository: any LCPLicenseRepository,
+        httpClient: any HTTPClient,
         keychainServiceName: String = "org.readium.lcp.device"
     ) {
         name = deviceName
