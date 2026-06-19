@@ -20,6 +20,7 @@ public protocol PublicationSpeechSynthesizerDelegate: AnyObject {
 
 /// `PublicationSpeechSynthesizer` orchestrates the rendition of a `Publication` by iterating through its content,
 /// splitting it into individual utterances using a `ContentTokenizer`, then using a `TTSEngine` to read them aloud.
+@MainActor
 public final class PublicationSpeechSynthesizer: Loggable {
     public typealias EngineFactory = () -> TTSEngine
     public typealias TokenizerFactory = (_ defaultLanguage: Language?) -> ContentTokenizer
@@ -88,12 +89,10 @@ public final class PublicationSpeechSynthesizer: Loggable {
     public private(set) var state: State = .stopped {
         didSet {
             if oldValue.isPlaying != state.isPlaying {
-                audioSession.user(audioSessionUser, didChangePlaying: state.isPlaying)
+                audioSessionUser.didChangePlaying(state.isPlaying)
             }
 
-            Task {
-                await delegate?.publicationSpeechSynthesizer(self, stateDidChange: state)
-            }
+            delegate?.publicationSpeechSynthesizer(self, stateDidChange: state)
         }
     }
 
@@ -143,18 +142,14 @@ public final class PublicationSpeechSynthesizer: Loggable {
         self.publication = publication
         self.config = config
         self.audioSession = audioSession
-        audioSessionUser = AudioSessionUser(config: audioSessionConfig)
+        audioSessionUser = AudioSessionUser(session: audioSession, config: audioSessionConfig)
         self.engineFactory = engineFactory
         self.tokenizerFactory = tokenizerFactory
         self.delegate = delegate
     }
 
-    deinit {
-        audioSession.end(for: audioSessionUser)
-    }
-
     /// The default content tokenizer will split the `Content.Element` items into individual sentences.
-    public static let defaultTokenizerFactory: TokenizerFactory = { defaultLanguage in
+    public nonisolated static let defaultTokenizerFactory: TokenizerFactory = { defaultLanguage in
         makeTextContentTokenizer(
             defaultLanguage: defaultLanguage,
             contextSnippetLength: 50,
@@ -189,7 +184,7 @@ public final class PublicationSpeechSynthesizer: Loggable {
 
     /// (Re)starts the synthesizer from the given locator or the beginning of the publication.
     public func start(from startLocator: Locator? = nil) {
-        audioSession.start(with: audioSessionUser, isPlaying: false)
+        audioSessionUser.start(isPlaying: false)
 
         currentTask?.cancel()
         publicationIterator = publication.content(from: startLocator)?.iterator()
@@ -312,7 +307,7 @@ public final class PublicationSpeechSynthesizer: Loggable {
             await playNextUtterance(.forward)
         case let .failure(error):
             state = .paused(utterance)
-            await delegate?.publicationSpeechSynthesizer(self, utterance: utterance, didFailWithError: .engine(error))
+            delegate?.publicationSpeechSynthesizer(self, utterance: utterance, didFailWithError: .engine(error))
         }
     }
 
@@ -425,11 +420,29 @@ public final class PublicationSpeechSynthesizer: Loggable {
     private final class AudioSessionUser: ReadiumShared.AudioSessionUser {
         let audioConfiguration: AudioSession.Configuration
 
-        init(config: AudioSession.Configuration) {
+        private let session: any AudioSessionManaging
+        private var token: AudioSessionToken?
+
+        init(session: any AudioSessionManaging, config: AudioSession.Configuration) {
+            self.session = session
             audioConfiguration = config
         }
 
+        isolated deinit {
+            if let token = token {
+                session.end(with: token)
+            }
+        }
+
         func play() {}
+
+        func start(isPlaying: Bool) {
+            token = session.start(with: self, isPlaying: isPlaying)
+        }
+
+        func didChangePlaying(_ isPlaying: Bool) {
+            session.user(self, didChangePlaying: isPlaying)
+        }
     }
 }
 
