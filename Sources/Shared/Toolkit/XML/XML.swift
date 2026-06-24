@@ -31,7 +31,7 @@ public struct XMLNamespace: Sendable {
     public static let xhtml2 = XMLNamespace(prefix: "xhtml2", uri: "http://www.w3.org/2002/06/xhtml2")
 }
 
-public protocol XMLNode {
+public protocol XMLNode: Sendable {
     /// Concatenated string content of all descendants.
     var textContent: String? { get }
 
@@ -96,7 +96,7 @@ public protocol XMLDocumentFactory: Sendable {
     func open(string: String, namespaces: [XMLNamespace]) throws -> XMLDocument
 }
 
-public final class DefaultXMLDocumentFactory: XMLDocumentFactory, Loggable, Sendable {
+public final class DefaultXMLDocumentFactory: XMLDocumentFactory, Loggable {
     public init() {}
 
     public func open(file: FileURL, namespaces: [XMLNamespace]) async throws -> XMLDocument {

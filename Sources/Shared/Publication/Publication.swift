@@ -9,8 +9,8 @@ import Foundation
 import ReadiumInternal
 
 /// Shared model for a Readium Publication.
-public final class Publication: Closeable, Loggable {
-    public var manifest: Manifest
+public final class Publication: Sendable, Closeable, Loggable {
+    public let manifest: Manifest
     private let container: Container
     private let services: [PublicationService]
 
@@ -161,7 +161,7 @@ public final class Publication: Closeable, Loggable {
     ///
     /// For a list of supported profiles, see the registry:
     /// https://readium.org/webpub-manifest/profiles/
-    public struct Profile: Hashable, RawRepresentable, Sendable {
+    public struct Profile: Hashable, Sendable, RawRepresentable {
         public let uri: String
 
         public init(_ uri: String) {

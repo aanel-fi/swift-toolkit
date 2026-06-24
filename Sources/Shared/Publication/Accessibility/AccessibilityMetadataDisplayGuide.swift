@@ -10,7 +10,7 @@ import ReadiumInternal
 /// When presenting accessibility metadata provided by the publisher, it is
 /// suggested that the section is introduced using terms such as "claims" or
 /// "declarations" (e.g., "Accessibility Claims").
-public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
+public struct AccessibilityMetadataDisplayGuide: Equatable, Sendable {
     /// The ways of reading display field is a banner heading that groups
     /// together the following information about how the content facilitates
     /// access.
@@ -88,7 +88,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// access.
     ///
     /// https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/guidelines/#ways-of-reading
-    public struct WaysOfReading: AccessibilityDisplayField, Sendable {
+    public struct WaysOfReading: AccessibilityDisplayField {
         /// Indicates if users can modify the appearance of the text and the
         /// page layout according to the possibilities offered by the reading
         /// system.
@@ -266,7 +266,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// Identifies the navigation features included in the publication.
     ///
     /// https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/guidelines/#navigation
-    public struct Navigation: AccessibilityDisplayField, Sendable {
+    public struct Navigation: AccessibilityDisplayField {
         /// Indicates whether no information about navigation features is
         /// available.
         public var noMetadata: Bool {
@@ -348,7 +348,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// for prerecorded audio are available.
     ///
     /// https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/guidelines/#rich-content
-    public struct RichContent: AccessibilityDisplayField, Sendable {
+    public struct RichContent: AccessibilityDisplayField {
         /// Indicates whether no information about rich content is available.
         public var noMetadata: Bool {
             !extendedAltTextDescriptions && !mathFormula && !mathFormulaAsMathML &&
@@ -469,7 +469,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// better understand the accessibility characteristics of digital
     /// publications. These are for metadata that do not fit into the other
     /// categories or are rarely used in trade publishing.
-    public struct AdditionalInformation: AccessibilityDisplayField, Sendable {
+    public struct AdditionalInformation: AccessibilityDisplayField {
         /// No information is available.
         public var noMetadata: Bool {
             !pageBreakMarkers && !aria && !audioDescriptions && !braille &&
@@ -629,7 +629,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// when content is potentially dangerous to them.
     ///
     /// https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/guidelines/#hazards
-    public struct Hazards: AccessibilityDisplayField, Sendable {
+    public struct Hazards: AccessibilityDisplayField {
         public enum Hazard: Sendable {
             case yes
             case no
@@ -780,7 +780,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// internationally recognized conformance standards for accessibility.
     ///
     /// https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/guidelines/#conformance-group
-    public struct Conformance: AccessibilityDisplayField, Sendable {
+    public struct Conformance: AccessibilityDisplayField {
         /// Accessibility conformance profiles.
         public var profiles: [Accessibility.Profile]
 
@@ -838,7 +838,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// by legal counsel for each jurisdiction.
     ///
     /// https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/guidelines/#legal-considerations
-    public struct Legal: AccessibilityDisplayField, Sendable {
+    public struct Legal: AccessibilityDisplayField {
         /// No information is available.
         public var noMetadata: Bool {
             !exemption
@@ -888,7 +888,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
     /// duplicate, the other discoverability metadata.
     ///
     /// https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/guidelines/#accessibility-summary
-    public struct AccessibilitySummary: AccessibilityDisplayField, Sendable {
+    public struct AccessibilitySummary: AccessibilityDisplayField {
         public var summary: String?
 
         public let id: AccessibilityDisplayString = .accessibilitySummaryTitle
@@ -927,7 +927,7 @@ public struct AccessibilityMetadataDisplayGuide: Sendable, Equatable {
 
 /// Represents a collection of related accessibility claims which should be
 /// displayed together in a section
-public protocol AccessibilityDisplayField: Sendable, Equatable, Identifiable {
+public protocol AccessibilityDisplayField: Equatable, Sendable, Identifiable {
     /// Unique identifier for this display field.
     var id: AccessibilityDisplayString { get }
 
@@ -948,7 +948,7 @@ public protocol AccessibilityDisplayField: Sendable, Equatable, Identifiable {
 
 /// Represents a single accessibility claim, such as "Appearance can be
 /// modified".
-public struct AccessibilityDisplayStatement: Sendable, Equatable, Identifiable {
+public struct AccessibilityDisplayStatement: Equatable, Sendable, Identifiable {
     /// Display string identifying the statement.
     /// See https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/draft/localizations/
     public let id: AccessibilityDisplayString
@@ -997,7 +997,7 @@ public struct AccessibilityDisplayStatement: Sendable, Equatable, Identifiable {
 /// Localized display string.
 ///
 /// See https://w3c.github.io/publ-a11y/a11y-meta-display-guide/2.0/draft/localizations/
-public struct AccessibilityDisplayString: RawRepresentable, ExpressibleByStringLiteral, Sendable, Hashable {
+public struct AccessibilityDisplayString: Hashable, Sendable, RawRepresentable, ExpressibleByStringLiteral {
     /// Special key for the provided summary, which is not localized.
     static let accessibilitySummary: Self = "readium.a11y.accessibility-summary"
 

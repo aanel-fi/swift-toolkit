@@ -9,7 +9,7 @@ import ReadiumInternal
 
 /// OPDS Acquisition Object
 /// https://specs.opds.io/schema/acquisition-object.schema.json
-public struct OPDSAcquisition: Equatable, JSONObjectEncodable, JSONValueDecodable, Sendable {
+public struct OPDSAcquisition: Equatable, Sendable, JSONObjectEncodable, JSONValueDecodable {
     public var type: String
     public var children: [OPDSAcquisition] = []
 
