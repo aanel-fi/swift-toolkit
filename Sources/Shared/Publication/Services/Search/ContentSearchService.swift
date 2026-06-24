@@ -24,7 +24,7 @@ import Foundation
 /// are not affected by this limitation.
 ///
 /// This service requires the publication to have a configured `ContentService`.
-public class ContentSearchService: SearchService, Loggable {
+public final class ContentSearchService: SearchService, Loggable {
     /// - Parameters:
     ///   - snippetLength: Maximum length of the `before` and `after` text
     ///     snippets in the returned locators.
@@ -102,7 +102,7 @@ private struct ElementEntry {
     var startOffset: Int
 }
 
-private final class Iterator: SearchIterator, Loggable {
+private actor Iterator: SearchIterator, Loggable {
     private(set) var resultCount: Int? = 0
 
     private let contentIterator: ContentIterator
