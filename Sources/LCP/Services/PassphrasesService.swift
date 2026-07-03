@@ -30,7 +30,7 @@ final class PassphrasesService: Loggable, Sendable {
     ) async throws(LCPAddPassphraseError) {
         let hash: LCPPassphraseHash
         if isHashed {
-            guard sha256Predicate.evaluate(with: passphrase) else {
+            guard isValidHashedPassphrase(passphrase) else {
                 throw .invalidHash
             }
             // Normalize to lowercase to match `sha256()` output, so a hashed
@@ -141,9 +141,9 @@ final class PassphrasesService: Loggable, Sendable {
 
         let hashedPassphrase = clearPassphrase.sha256()
         var passphrases = [hashedPassphrase]
-        // Note: The C++ LCP lib crashes if we provide a passphrase that is not a valid
-        // SHA-256 hash. So we check this beforehand.
-        if clearPassphrase.count == 64, clearPassphrase.allSatisfy({ $0.isASCII && $0.isHexDigit }) {
+        // Note: The C++ LCP lib crashes if we provide a passphrase that is not
+        // a valid SHA-256 hash. So we check this beforehand.
+        if isValidHashedPassphrase(clearPassphrase) {
             passphrases.append(clearPassphrase)
         }
 
@@ -179,5 +179,11 @@ final class PassphrasesService: Loggable, Sendable {
             reason: reason,
             allowUserInteraction: allowUserInteraction
         )
+    }
+
+    /// Returns whether the provided `passphrase` is actually a valid hashed
+    /// passphrase, and not just a clear passphrase.
+    private func isValidHashedPassphrase(_ passphrase: String) -> Bool {
+        passphrase.count == 64 && passphrase.allSatisfy { $0.isASCII && $0.isHexDigit }
     }
 }
