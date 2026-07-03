@@ -9,13 +9,12 @@ import ReadiumShared
 
 /// Service used to acquire and open publications protected with LCP.
 ///
-/// If an `LCPAuthenticating` instance is not given when expected, the request is cancelled if no
-/// passphrase is found in the local database. This can be the desired behavior when trying to
-/// import a license in the background, without prompting the user for its passphrase.
-///
-/// You can freely use the `sender` parameter to give some UI context which will be forwarded to
-/// your instance of `LCPAuthenticating`. This can be useful to provide the host `UIViewController`
-/// when presenting a dialog, for example.
+/// When a passphrase is not already stored in the `passphraseRepository`, it
+/// is requested from the provided `LCPAuthenticating` instance. If
+/// `allowUserInteraction` is false then the `authentication` implementation
+/// will not present any dialog to the user. This can be the desired behavior
+/// when trying to import a license in the background, without prompting the
+/// user for their passphrase.
 public final class LCPService: Loggable {
     private let licenses: LicensesService
     private let passphrases: PassphrasesService
@@ -147,22 +146,28 @@ public final class LCPService: Loggable {
     ///     `authentication`.
     ///   - allowUserInteraction: Indicates whether the user can be prompted
     ///     for their passphrase.
-    ///   - sender: Free object that can be used by reading apps to give some
-    ///     UX context when presenting dialogs with ``LCPAuthenticating``.
+    public func retrieveLicense(
+        from asset: Asset,
+        authentication: LCPAuthenticating,
+        allowUserInteraction: Bool
+    ) async -> Result<LCPLicense, LCPError> {
+        await wrap {
+            try await licenses.retrieve(
+                from: asset,
+                authentication: authentication,
+                allowUserInteraction: allowUserInteraction
+            )
+        }
+    }
+
+    @available(*, unavailable, message: "The `sender` parameter has been removed. Present any UI from your `LCPDialogAuthenticationDelegate` implementation and use the variant without `sender`.")
     public func retrieveLicense(
         from asset: Asset,
         authentication: LCPAuthenticating,
         allowUserInteraction: Bool,
         sender: Any?
     ) async -> Result<LCPLicense, LCPError> {
-        await wrap {
-            try await licenses.retrieve(
-                from: asset,
-                authentication: authentication,
-                allowUserInteraction: allowUserInteraction,
-                sender: sender
-            )
-        }
+        fatalError()
     }
 
     /// Creates a `ContentProtection` instance which can be used with a `Streamer` to unlock
