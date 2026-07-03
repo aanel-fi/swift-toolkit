@@ -43,22 +43,19 @@ final class LicensesService: Loggable {
     func retrieve(
         from asset: Asset,
         authentication: LCPAuthenticating?,
-        allowUserInteraction: Bool,
-        sender: Any?
+        allowUserInteraction: Bool
     ) async throws -> LCPLicense {
         try await retrieve(
             from: makeLicenseContainer(for: asset),
             authentication: authentication,
-            allowUserInteraction: allowUserInteraction,
-            sender: sender
+            allowUserInteraction: allowUserInteraction
         )
     }
 
     private func retrieve(
         from container: LicenseContainer,
         authentication: LCPAuthenticating?,
-        allowUserInteraction: Bool,
-        sender: Any?
+        allowUserInteraction: Bool
     ) async throws -> License {
         let initialData = try await container.read()
 
@@ -84,7 +81,6 @@ final class LicensesService: Loggable {
         let validation = LicenseValidation(
             authentication: authentication,
             allowUserInteraction: allowUserInteraction,
-            sender: sender.map { UncheckedSendable($0) },
             client: client,
             crl: crl,
             device: device,

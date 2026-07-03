@@ -8,6 +8,7 @@ import Foundation
 import ReadiumNavigator
 import ReadiumShared
 import ReadiumStreamer
+import UIKit
 
 #if LCP
     import R2LCPClient
@@ -49,7 +50,23 @@ import ReadiumStreamer
             httpClient: httpClient
         )
 
-        lazy var lcpAuthentication: LCPAuthenticating = LCPDialogAuthentication()
+        lazy var lcpAuthentication: LCPAuthenticating = LCPDialogAuthentication(delegate: lcpDialogPresenter)
+
+        /// The dialog authentication holds its delegate weakly, so we retain
+        /// the presenter for the lifetime of the application.
+        private let lcpDialogPresenter = LCPDialogPresenter()
+
+        /// Presents the LCP passphrase dialog on the app's top-most view
+        /// controller, replacing the former `sender` parameter.
+        @MainActor
+        private final class LCPDialogPresenter: LCPDialogAuthenticationDelegate {
+            func lcpDialogAuthentication(
+                _ authentication: LCPDialogAuthentication,
+                present dialogViewController: UIViewController
+            ) {
+                UIViewController.topMost?.present(dialogViewController, animated: true)
+            }
+        }
 
         /// Facade to the private R2LCPClient.framework.
         final class LCPClient: ReadiumLCP.LCPClient {

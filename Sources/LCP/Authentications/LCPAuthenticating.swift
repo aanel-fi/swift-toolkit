@@ -20,15 +20,25 @@ public protocol LCPAuthenticating: Sendable {
     ///   - allowUserInteraction: Indicates whether the user can be prompted for their passphrase.
     ///     If your implementation requires it and `allowUserInteraction` is false, terminate
     ///     quickly by returning `nil`.
-    ///   - sender: Free object that can be used by reading apps to give some UX context when
-    ///     presenting dialogs. For example, the host `UIViewController`.
+    @MainActor
+    func retrievePassphrase(
+        for license: LCPAuthenticatedLicense,
+        reason: LCPAuthenticationReason,
+        allowUserInteraction: Bool
+    ) async -> String?
+}
+
+public extension LCPAuthenticating {
+    @available(*, unavailable, message: "The `sender` parameter has been removed. Present any UI from your `LCPDialogAuthenticationDelegate` implementation and use the variant without `sender`.")
     @MainActor
     func retrievePassphrase(
         for license: LCPAuthenticatedLicense,
         reason: LCPAuthenticationReason,
         allowUserInteraction: Bool,
         sender: Any?
-    ) async -> String?
+    ) async -> String? {
+        fatalError()
+    }
 }
 
 public enum LCPAuthenticationReason: Sendable {

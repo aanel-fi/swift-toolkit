@@ -21,24 +21,21 @@ final class LCPContentProtection: ContentProtection, Loggable {
     func open(
         asset: Asset,
         credentials: String?,
-        allowUserInteraction: Bool,
-        sender: Any?
+        allowUserInteraction: Bool
     ) async -> Result<ContentProtectionAsset, ContentProtectionOpenError> {
         switch asset {
         case let .resource(resource):
             return await openLicense(
                 using: resource,
                 credentials: credentials,
-                allowUserInteraction: allowUserInteraction,
-                sender: sender
+                allowUserInteraction: allowUserInteraction
             )
 
         case let .container(container):
             return await openPublication(
                 in: container,
                 credentials: credentials,
-                allowUserInteraction: allowUserInteraction,
-                sender: sender
+                allowUserInteraction: allowUserInteraction
             )
         }
     }
@@ -46,8 +43,7 @@ final class LCPContentProtection: ContentProtection, Loggable {
     func openLicense(
         using asset: ResourceAsset,
         credentials: String?,
-        allowUserInteraction: Bool,
-        sender: Any?
+        allowUserInteraction: Bool
     ) async -> Result<ContentProtectionAsset, ContentProtectionOpenError> {
         guard asset.format.conformsTo(.lcpLicense) else {
             return .failure(.assetNotSupported(DebugError("The asset does not appear to be an LCP License")))
@@ -82,8 +78,7 @@ final class LCPContentProtection: ContentProtection, Loggable {
         let licenseResult = await retrieveLicense(
             in: .resource(asset),
             credentials: credentials,
-            allowUserInteraction: allowUserInteraction,
-            sender: sender
+            allowUserInteraction: allowUserInteraction
         )
 
         return await makeLCPAsset(from: container, license: licenseResult)
@@ -92,8 +87,7 @@ final class LCPContentProtection: ContentProtection, Loggable {
     func openPublication(
         in asset: ContainerAsset,
         credentials: String?,
-        allowUserInteraction: Bool,
-        sender: Any?
+        allowUserInteraction: Bool
     ) async -> Result<ContentProtectionAsset, ContentProtectionOpenError> {
         guard asset.format.conformsTo(.lcp) else {
             return .failure(.assetNotSupported(DebugError("The asset does not appear to be protected with LCP")))
@@ -109,8 +103,7 @@ final class LCPContentProtection: ContentProtection, Loggable {
             license: retrieveLicense(
                 in: .container(asset),
                 credentials: credentials,
-                allowUserInteraction: allowUserInteraction,
-                sender: sender
+                allowUserInteraction: allowUserInteraction
             )
         )
     }
@@ -118,8 +111,7 @@ final class LCPContentProtection: ContentProtection, Loggable {
     private func retrieveLicense(
         in asset: Asset,
         credentials: String?,
-        allowUserInteraction: Bool,
-        sender: Any?
+        allowUserInteraction: Bool
     ) async -> Result<LCPLicense, LCPError> {
         let authentication = credentials.map { LCPPassphraseAuthentication($0, fallback: self.authentication) }
             ?? self.authentication
@@ -127,8 +119,7 @@ final class LCPContentProtection: ContentProtection, Loggable {
         return await service.retrieveLicense(
             from: asset,
             authentication: authentication,
-            allowUserInteraction: allowUserInteraction,
-            sender: sender
+            allowUserInteraction: allowUserInteraction
         )
     }
 
