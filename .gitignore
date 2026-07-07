@@ -59,3 +59,5 @@ out/
 # DocC generation
 .build-docs
 docs-site
+
+__pycache__

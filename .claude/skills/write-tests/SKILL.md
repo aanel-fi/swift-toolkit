@@ -183,6 +183,36 @@ fileprivate func makeLocator(href: String = "/ch.html", progression: Double? = n
 6. No `guard ... else { return }` — replaced with `!` or `try #require`?
 7. Three or more tests sharing setup? Extract a `fileprivate` helper.
 
+## What must be tested (project policy)
+
+- **Every public API change needs tests** covering the new or changed behavior — a public API PR without tests is incomplete.
+- **Every bug fix needs a regression test.** Write it first and check that it fails without the fix, so it actually pins the bug.
+- **Parser/format changes** (Streamer, OPDS) need fixture-based tests exercising real publication files, not just in-memory structures.
+
+## Fixtures
+
+Each test target keeps its fixtures in `Tests/<Target>Tests/Fixtures/`, organized in subfolders mirroring the tested area (e.g. `Fixtures/Publication/`, `Fixtures/Format/`). Load them through the target's `Fixtures` helper (see `Tests/SharedTests/Fixtures.swift`):
+
+```swift
+let fixtures = Fixtures(path: "Format")
+let url = fixtures.url(for: "epub.unknown")   // FileURL
+let data = fixtures.data(at: "audiobook.json")
+let json: [String: Any] = fixtures.json(at: "locator-full.json")
+```
+
+Full sample publications used across targets live in `Tests/Publications/`. Prefer the smallest fixture that exercises the behavior: an in-memory stub when the logic doesn't depend on file structure, a minimal crafted file when it does, a full publication only for integration-level parser tests.
+
+When adding a fixture file, keep it minimal and name it after what it exercises (`epub-obfuscated.epub`, `locator-minimal.json`).
+
+## Test doubles
+
+**Reuse the existing doubles before writing new ones** — search the test target for `Fake`, `Mock`, and `Test` prefixed types first. Established ones include:
+
+- `FakeResource` (`Tests/SharedTests/Toolkit/Data/Resource/`) for `Resource` behavior
+- `MockURLProtocol` (`Tests/SharedTests/Toolkit/HTTP/`) for HTTP traffic without a network
+
+Follow the local conventions when a new double is needed: name it `Fake<Protocol>` for a canned-value stand-in or `Mock<Thing>` when it records interactions, put it in its own file in the test target, and implement the toolkit protocol (`Resource`, `HTTPClient`, …) rather than inventing an ad-hoc abstraction. Never add test-only hooks to library code in `Sources/`.
+
 ## Traits and advanced features
 
 - `.serialized`: run a suite's tests sequentially (use only when tests share mutable state)
