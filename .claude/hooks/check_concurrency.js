@@ -1,9 +1,17 @@
 #!/usr/bin/env node
 // PostToolUse hook: warns when an edit introduces concurrency red flags in Sources/.
+// Runtime-agnostic: handles Claude Code and GitHub Copilot (VS Code / CLI) payloads.
+// Some agents ignore matchers and run every hook on every tool, so this self-filters
+// on the file path and only acts when red flags appear in the *added* text.
 
 const fs = require("fs");
 
 const RED_FLAGS = ["@unchecked Sendable", "nonisolated(unsafe)", "try!", "fatalError("];
+
+// Tool input lives under different keys across agents.
+function toolInput(data) {
+  return data.tool_input || data.toolArgs || data.tool_args || {};
+}
 
 function main() {
   let data;
@@ -12,13 +20,17 @@ function main() {
   } catch {
     return;
   }
-  const toolInput = data.tool_input || {};
-  const path = toolInput.file_path || "";
+  const input = toolInput(data);
+  const path = input.file_path || input.filePath || input.path || "";
   if (!path.includes("/Sources/") || !path.endsWith(".swift")) {
     return;
   }
-  // Only inspect the text added by this edit, not pre-existing code.
-  const added = toolInput.new_string || toolInput.content || "";
+  // Only inspect the text added by this edit, not pre-existing code. The field name
+  // varies across agents and tools (Edit/Write, create_file/replace_string_in_file, …).
+  const added =
+    input.new_string || input.newString ||
+    input.content || input.newText ||
+    input.code || input.contents || "";
   const found = RED_FLAGS.filter((flag) => added.includes(flag));
   if (found.length > 0) {
     const flags = found.map((f) => "`" + f + "`").join(", ");

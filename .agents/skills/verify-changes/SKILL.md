@@ -36,7 +36,7 @@ scripts/test.sh
 
 Beyond tests, a change isn't complete until:
 
-- Edits under `Sources/Navigator/EPUB/Scripts/src/` are rebundled with `make scripts` and the regenerated assets are included in the change. (The Stop hook runs this automatically and blocks if bundling fails — fix the errors, don't bypass it.) Verify the TypeScript side directly with `pnpm run lint` in `Sources/Navigator/EPUB/Scripts/` when the JS layer changed.
+- Edits under `Sources/Navigator/EPUB/Scripts/src/` are rebundled with `make scripts` and the regenerated assets are included in the change. (The project's quality hook regenerates these automatically on agents that support hooks — Claude Code and GitHub Copilot; on other agents, run the command yourself. Either way, bundling must succeed before finishing — don't bypass a failure.) Verify the TypeScript side directly with `pnpm run lint` in `Sources/Navigator/EPUB/Scripts/` when the JS layer changed.
 - Public API changes carry their CHANGELOG.md / Migration Guide entries (see `change-public-api`).
 - New targets or dependencies in `Package.swift` are reflected in the generated podspecs (`make podspecs`).
 

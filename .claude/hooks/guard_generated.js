@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // PreToolUse hook: blocks direct edits to generated files, pointing to the real source.
+// Runtime-agnostic: handles Claude Code and GitHub Copilot (VS Code / CLI) payloads.
 
 const fs = require("fs");
 
@@ -18,6 +19,15 @@ const GENERATED = [
   ],
 ];
 
+// Tool input lives under different keys across agents.
+function toolInput(data) {
+  return data.tool_input || data.toolArgs || data.tool_args || {};
+}
+// File path property name varies: file_path (Claude), filePath (VS Code), path (Copilot CLI).
+function filePath(input) {
+  return input.file_path || input.filePath || input.path || "";
+}
+
 function main() {
   let data;
   try {
@@ -25,7 +35,7 @@ function main() {
   } catch {
     return;
   }
-  const path = (data.tool_input && data.tool_input.file_path) || "";
+  const path = filePath(toolInput(data));
   for (const [fragment, reason] of GENERATED) {
     if (path.includes(fragment)) {
       process.stdout.write(
