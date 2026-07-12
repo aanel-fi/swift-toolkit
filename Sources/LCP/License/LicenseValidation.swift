@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import ReadiumInternal
 import ReadiumShared
 
 typealias Context = Result<LCPClientContext, LCPError>
@@ -40,6 +41,8 @@ actor LicenseValidation: Loggable {
     fileprivate var observers: [(callback: Observer, policy: ObserverPolicy)] = []
 
     fileprivate let onLicenseValidated: @Sendable (LicenseDocument) async throws -> Void
+
+    private let tasks = CancellableTasks()
 
     /// Current state in the validation steps.
     private(set) var state: State = .start {
@@ -409,26 +412,28 @@ extension LicenseValidation {
     }
 
     nonisolated func observe(_ policy: ObserverPolicy = .always, _ observer: @escaping Observer) {
-        Task {
-            // If the state is already valid or a failure, we notify it to the observer right away.
-            var notified = true
-            switch await state {
-            case let .valid(documents):
-                observer(.success(documents))
-            case let .failure(error):
-                observer(.failure(error))
-            default:
-                notified = false
-            }
-
-            guard !notified || policy == .always else {
-                return
-            }
-            await addObserver(observer, policy: policy)
+        tasks.add {
+            await register(observer, policy: policy)
         }
     }
 
-    private func addObserver(_ observer: @escaping Observer, policy: ObserverPolicy) {
+    /// Atomically checks the current state and registers the observer, so it
+    /// cannot miss a notification fired between the two.
+    private func register(_ observer: @escaping Observer, policy: ObserverPolicy) {
+        // If the state is already valid or a failure, we notify it to the observer right away.
+        var notified = true
+        switch state {
+        case let .valid(documents):
+            observer(.success(documents))
+        case let .failure(error):
+            observer(.failure(error))
+        default:
+            notified = false
+        }
+
+        guard !notified || policy == .always else {
+            return
+        }
         observers.append((observer, policy))
     }
 
