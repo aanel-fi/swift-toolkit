@@ -5,7 +5,6 @@
 //
 
 import Foundation
-import ReadiumInternal
 import ReadiumShared
 
 typealias Context = Result<LCPClientContext, LCPError>
