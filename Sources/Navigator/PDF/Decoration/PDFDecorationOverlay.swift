@@ -19,6 +19,49 @@ struct PDFDecorationRenderItem {
     let template: PDFDecorationTemplate
 }
 
+/// A unit of rendering in the overlay view: one subview per unit.
+enum PDFDecorationRenderUnit {
+    /// A single decoration rendered on its own (`.view` and `.draw`
+    /// templates).
+    case single(PDFDecorationRenderItem)
+    /// All the decorations of a (group, style) pair rendered as one merged
+    /// view (`.viewMerged` templates).
+    case merged([PDFDecorationRenderItem])
+}
+
+/// Identifies the (group, style) pair merged into a single render unit.
+private struct MergeKey: Hashable {
+    let group: DecorationGroup
+    let style: Decoration.Style.Id
+}
+
+extension Array where Element == PDFDecorationRenderItem {
+    /// Groups the render items into render units, preserving the z-order.
+    ///
+    /// Items with a `.viewMerged` template are merged per (group, style)
+    /// across the whole page — even non-contiguous ones — and the merged unit
+    /// sits in z-order at the first such item's position.
+    func renderUnits() -> [PDFDecorationRenderUnit] {
+        var units: [PDFDecorationRenderUnit] = []
+        var mergedIndexes: [MergeKey: Int] = [:]
+
+        for item in self {
+            guard case .viewMerged = item.template.renderer else {
+                units.append(.single(item))
+                continue
+            }
+            let key = MergeKey(group: item.group, style: item.decoration.style.id)
+            if let index = mergedIndexes[key], case let .merged(items) = units[index] {
+                units[index] = .merged(items + [item])
+            } else {
+                mergedIndexes[key] = units.count
+                units.append(.merged([item]))
+            }
+        }
+        return units
+    }
+}
+
 extension CGRect {
     /// Converts a rect from PDF user space to the overlay view's UIKit space.
     ///
@@ -171,31 +214,57 @@ private final class PDFDecorationOverlayView: UIView {
 
         let pageFrame = CGRect(origin: .zero, size: pageBounds.size)
 
-        for item in items {
-            let rects = item.rects.map { $0.convertedFromPDFSpace(pageBounds: pageBounds) }
+        for unit in items.renderUnits() {
+            switch unit {
+            case let .single(item):
+                let rects = item.rects.map { $0.convertedFromPDFSpace(pageBounds: pageBounds) }
 
-            switch item.template.renderer {
-            case let .view(makeView):
-                let container = UIView(frame: pageFrame)
-                container.isUserInteractionEnabled = false
-                for rect in rects {
-                    let view = makeView(item.decoration, rect)
-                    view.frame = rect
-                    view.isUserInteractionEnabled = false
-                    container.addSubview(view)
+                switch item.template.renderer {
+                case let .view(makeView):
+                    let container = UIView(frame: pageFrame)
+                    container.isUserInteractionEnabled = false
+                    container.clipsToBounds = item.template.clipsToPageBounds
+                    for rect in rects {
+                        let view = makeView(item.decoration, rect)
+                        view.frame = rect
+                        view.isUserInteractionEnabled = false
+                        container.addSubview(view)
+                    }
+                    addSubview(container)
+
+                case let .draw(draw):
+                    let canvas = PDFDecorationCanvasView(
+                        frame: pageFrame,
+                        decoration: item.decoration,
+                        rects: rects,
+                        drawer: draw
+                    )
+                    canvas.clipsToBounds = item.template.clipsToPageBounds
+                    canvas.layer.contentsScale = contentsScale
+                    canvases.append(canvas)
+                    addSubview(canvas)
+
+                case .viewMerged:
+                    // `renderUnits()` always yields `.viewMerged` items in a
+                    // `.merged` unit.
+                    continue
                 }
-                addSubview(container)
 
-            case let .draw(draw):
-                let canvas = PDFDecorationCanvasView(
-                    frame: pageFrame,
-                    decoration: item.decoration,
-                    rects: rects,
-                    drawer: draw
-                )
-                canvas.layer.contentsScale = contentsScale
-                canvases.append(canvas)
-                addSubview(canvas)
+            case let .merged(mergedItems):
+                guard
+                    let template = mergedItems.first?.template,
+                    case let .viewMerged(makeView) = template.renderer
+                else {
+                    continue
+                }
+                let decorations = mergedItems.map { item in
+                    (item.decoration, item.rects.map { $0.convertedFromPDFSpace(pageBounds: pageBounds) })
+                }
+                let view = makeView(decorations, pageFrame)
+                view.frame = pageFrame
+                view.isUserInteractionEnabled = false
+                view.clipsToBounds = template.clipsToPageBounds
+                addSubview(view)
             }
         }
     }

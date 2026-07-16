@@ -753,7 +753,7 @@ open class PDFNavigatorViewController:
                 items.append(PDFDecorationRenderItem(
                     decoration: decoration,
                     group: group,
-                    rects: template.layoutRects(for: lineRects, pageBounds: pageBounds),
+                    rects: template.layoutRects(for: lineRects, pageBounds: pageBounds, expand: decoration.style.expand),
                     template: template
                 ))
             }

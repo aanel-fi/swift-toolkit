@@ -100,10 +100,14 @@ final class PDFViewController: VisualReaderViewController<PDFNavigatorViewContro
         let tint: UIColor = [.systemRed, .systemBlue, .systemGreen, .systemOrange, .systemPurple, .systemTeal].randomElement()!
         let style: Decoration.Style = [
             .highlight(tint: tint, isActive: Bool.random()),
+            .highlight(tint: tint, expand: 4),
             .underline(tint: tint),
-            Decoration.Style(id: "debug-frame", config: Decoration.Style.HighlightConfig(tint: tint)),
-            Decoration.Style(id: "debug-sidemark", config: Decoration.Style.HighlightConfig(tint: tint)),
-            Decoration.Style(id: "debug-block", config: Decoration.Style.HighlightConfig(tint: tint)),
+            .strikethrough(tint: tint),
+            .outline(tint: tint),
+            .mask(tint: tint),
+//            Decoration.Style(id: "debug-frame", config: Decoration.Style.HighlightConfig(tint: tint)),
+//            Decoration.Style(id: "debug-sidemark", config: Decoration.Style.HighlightConfig(tint: tint)),
+//            Decoration.Style(id: "debug-block", config: Decoration.Style.HighlightConfig(tint: tint)),
         ].randomElement()!
 
         debugDecorations.append(Decoration(

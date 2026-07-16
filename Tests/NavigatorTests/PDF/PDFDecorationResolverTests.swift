@@ -10,21 +10,21 @@ import PDFKit
 import ReadiumShared
 import Testing
 
-struct PDFDecorationResolverTests {
+enum PDFDecorationResolverTests {
     @MainActor
     struct RectFragments {
         @Test func rendersDirectlyWithNoTextSearch() throws {
-            let rects = PDFDecorationResolver.resolveRects(
+            let rects = try PDFDecorationResolver.resolveRects(
                 for: makeLocator(fragments: ["page=7", "highlight=10,20,30,5"]),
-                on: try textPage()
+                on: textPage()
             )
             #expect(rects == [CGRect(x: 10, y: 5, width: 10, height: 25)])
         }
 
         @Test func supportsOneHighlightFragmentPerLine() throws {
-            let rects = PDFDecorationResolver.resolveRects(
+            let rects = try PDFDecorationResolver.resolveRects(
                 for: makeLocator(fragments: ["page=7", "highlight=100,400,600,588", "highlight=36,150,588,576"]),
-                on: try textPage()
+                on: textPage()
             )
             #expect(rects == [
                 CGRect(x: 100, y: 588, width: 300, height: 12),
@@ -33,9 +33,9 @@ struct PDFDecorationResolverTests {
         }
 
         @Test func takesPriorityOverTextHighlight() throws {
-            let rects = PDFDecorationResolver.resolveRects(
+            let rects = try PDFDecorationResolver.resolveRects(
                 for: makeLocator(fragments: ["highlight=10,20,30,5"], highlight: "text which does not exist on the page"),
-                on: try textPage()
+                on: textPage()
             )
             #expect(rects == [CGRect(x: 10, y: 5, width: 10, height: 25)])
         }
@@ -58,26 +58,26 @@ struct PDFDecorationResolverTests {
         }
 
         @Test func textSpanningSeveralLinesYieldsOneBoxPerLine() throws {
-            let rects = try #require(PDFDecorationResolver.resolveRects(
+            let rects = try #require(try PDFDecorationResolver.resolveRects(
                 for: makeLocator(highlight: "for the entertainment of tourists"),
-                on: try textPage()
+                on: textPage()
             ))
             #expect(rects.count == 2)
         }
 
         @Test func unresolvableTextRendersNothing() throws {
             // A failed search must never degrade into a full-page highlight.
-            let rects = PDFDecorationResolver.resolveRects(
+            let rects = try PDFDecorationResolver.resolveRects(
                 for: makeLocator(highlight: "text which does not exist on the page"),
-                on: try textPage()
+                on: textPage()
             )
             #expect(rects == nil)
         }
 
         @Test func missingTextLayerRendersNothing() throws {
-            let rects = PDFDecorationResolver.resolveRects(
+            let rects = try PDFDecorationResolver.resolveRects(
                 for: makeLocator(highlight: "comfortable hotel"),
-                on: try scannedPage()
+                on: scannedPage()
             )
             #expect(rects == nil)
         }

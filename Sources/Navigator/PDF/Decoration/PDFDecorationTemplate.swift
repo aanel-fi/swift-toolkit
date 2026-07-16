@@ -55,15 +55,30 @@ public struct PDFDecorationTemplate: Sendable {
         /// Prefer `view` with plain `UIView`s when possible, as solid-color
         /// views stay sharp at any zoom level.
         case draw(@MainActor @Sendable (_ decoration: Decoration, _ rects: [CGRect], _ context: CGContext) -> Void)
+
+        /// Called once per (group, style) per page with every decoration of
+        /// that style in the group, producing a single page-sized view (e.g. a
+        /// mask overlay).
+        ///
+        /// The merged view is inserted in z-order at the position of the first
+        /// merged decoration. The overlay sizes the returned view to
+        /// `pageFrame` and force-disables its user interaction.
+        case viewMerged(@MainActor @Sendable (_ decorations: [(Decoration, [CGRect])], _ pageFrame: CGRect) -> UIView)
     }
 
     public var layout: Layout
     public var width: Width
     public var renderer: Renderer
 
-    public init(layout: Layout, width: Width = .wrap, renderer: Renderer) {
+    /// Indicates whether the rendered decorations are clipped to the page
+    /// bounds. Disable it for templates meant to bleed into the margins,
+    /// e.g. a sidemark.
+    public var clipsToPageBounds: Bool
+
+    public init(layout: Layout, width: Width = .wrap, clipsToPageBounds: Bool = true, renderer: Renderer) {
         self.layout = layout
         self.width = width
+        self.clipsToPageBounds = clipsToPageBounds
         self.renderer = renderer
     }
 
@@ -72,7 +87,19 @@ public struct PDFDecorationTemplate: Sendable {
     ///
     /// All the rects share the same coordinate space; the widths are adjusted
     /// against `pageBounds`, the page's crop box.
-    func layoutRects(for lineRects: [CGRect], pageBounds: CGRect) -> [CGRect] {
+    ///
+    /// `expand` inflates each line box on every side before the union and
+    /// width adjustments, so:
+    /// - under `width: .bounds` or `.page` the horizontal inflation is
+    ///   overwritten by the width adjustment — `expand` is effectively
+    ///   vertical-only there;
+    /// - the rects may exceed `pageBounds` — painting outside the page is
+    ///   controlled by `clipsToPageBounds`.
+    func layoutRects(for lineRects: [CGRect], pageBounds: CGRect, expand: CGFloat = 0) -> [CGRect] {
+        let lineRects = (expand != 0)
+            ? lineRects.map { $0.insetBy(dx: -expand, dy: -expand) }
+            : lineRects
+
         guard let bounds = lineRects.union() else {
             return []
         }
@@ -105,7 +132,8 @@ public struct PDFDecorationTemplate: Sendable {
     ///   - alpha: Opacity of the highlight fill color (0–1).
     ///   - activeAlpha: Opacity of the highlight fill color when the
     ///     decoration is active (0–1).
-    ///   - lineWeight: Thickness in page points of the underline stroke.
+    ///   - lineWeight: Thickness in page points of the underline and
+    ///     strikethrough strokes, and of the outline border.
     public static func defaultTemplates(
         defaultTint: UIColor = .yellow,
         alpha: CGFloat = 0.3,
@@ -115,6 +143,9 @@ public struct PDFDecorationTemplate: Sendable {
         [
             .highlight: .highlight(defaultTint: defaultTint, alpha: alpha, activeAlpha: activeAlpha),
             .underline: .underline(defaultTint: defaultTint, alpha: alpha, lineWeight: lineWeight),
+            .strikethrough: .strikethrough(defaultTint: defaultTint, lineWeight: lineWeight),
+            .outline: .outline(defaultTint: defaultTint, lineWidth: lineWeight),
+            .mask: .mask(defaultTint: defaultTint, alpha: alpha),
         ]
     }
 
@@ -149,11 +180,95 @@ public struct PDFDecorationTemplate: Sendable {
             }
         )
     }
+
+    /// Creates a new decoration template for the `strikethrough` style.
+    ///
+    /// Like `underline`, but the line sits at the vertical center of each
+    /// line box.
+    public static func strikethrough(defaultTint: UIColor, lineWeight: CGFloat = 2) -> PDFDecorationTemplate {
+        PDFDecorationTemplate(
+            layout: .boxes,
+            renderer: .view { decoration, frame in
+                let tint = decoration.style.tint(defaultTint: defaultTint)
+                let view = UIView(frame: frame)
+                let line = UIView(frame: CGRect(x: 0, y: (frame.height - lineWeight) / 2, width: frame.width, height: lineWeight))
+                line.backgroundColor = tint
+                line.autoresizingMask = [.flexibleWidth, .flexibleTopMargin, .flexibleBottomMargin]
+                view.addSubview(line)
+                return view
+            }
+        )
+    }
+
+    /// Creates a new decoration template for the `outline` style, drawing a
+    /// border around each line box.
+    public static func outline(defaultTint: UIColor, lineWidth: CGFloat = 2) -> PDFDecorationTemplate {
+        PDFDecorationTemplate(
+            layout: .boxes,
+            renderer: .view { decoration, frame in
+                let view = UIView(frame: frame)
+                view.layer.borderColor = decoration.style.tint(defaultTint: defaultTint).cgColor
+                view.layer.borderWidth = lineWidth
+                return view
+            }
+        )
+    }
+
+    /// Creates a new decoration template for the `mask` style, dimming the
+    /// whole page except the decorated text.
+    ///
+    /// All the `mask` decorations of a group render as a single page-sized
+    /// tinted view whose mask layer punches a hole at every decoration's
+    /// rects. The rendering is vector-based, so it stays sharp at any zoom
+    /// level without rasterization.
+    ///
+    /// The page is tinted with the tint of the first mask decoration rendered
+    /// on each page (falling back to `defaultTint`); use a uniform tint or
+    /// the default for a consistent color across pages.
+    ///
+    /// Known limitations:
+    /// - A single tint per page.
+    /// - Masks in different groups on one page dim each other's holes — keep
+    ///   all the masks in a single group.
+    public static func mask(defaultTint: UIColor, alpha: CGFloat = 0.3) -> PDFDecorationTemplate {
+        PDFDecorationTemplate(
+            layout: .boxes,
+            renderer: .viewMerged { decorations, pageFrame in
+                let tint = decorations.first?.0.style.tint(defaultTint: defaultTint) ?? defaultTint
+                let view = UIView(frame: pageFrame)
+                view.backgroundColor = tint.withAlphaComponent(alpha)
+
+                let path = UIBezierPath(rect: pageFrame)
+                for (_, rects) in decorations {
+                    for rect in rects {
+                        path.append(UIBezierPath(rect: rect))
+                    }
+                }
+                let mask = CAShapeLayer()
+                mask.frame = pageFrame
+                mask.fillRule = .evenOdd
+                mask.path = path.cgPath
+                view.layer.mask = mask
+                return view
+            }
+        )
+    }
 }
 
 private extension Decoration.Style {
     func highlightConfig(defaultTint: UIColor) -> (tint: UIColor, isActive: Bool) {
         let config = config as? Decoration.Style.HighlightConfig
         return (config?.tint ?? defaultTint, config?.isActive ?? false)
+    }
+
+    func tint(defaultTint: UIColor) -> UIColor {
+        switch config?.base {
+        case let config as Decoration.Style.TintConfig:
+            return config.tint ?? defaultTint
+        case let config as Decoration.Style.HighlightConfig:
+            return config.tint ?? defaultTint
+        default:
+            return defaultTint
+        }
     }
 }

@@ -8,7 +8,7 @@ import CoreGraphics
 @testable import ReadiumNavigator
 import Testing
 
-struct PDFRectFragmentTests {
+enum PDFRectFragmentTests {
     struct Parsing {
         @Test func highlight() {
             let fragments = PDFRectFragment.parse(fragment: "highlight=10,20,30,5")

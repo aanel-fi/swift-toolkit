@@ -8,7 +8,7 @@ import Foundation
 @testable import ReadiumNavigator
 import Testing
 
-struct PDFTextMatcherTests {
+enum PDFTextMatcherTests {
     struct ExactMatch {
         @Test func findsLiteralQuery() {
             let text = "At the little town of Vevey, in Switzerland"
