@@ -140,9 +140,6 @@ public struct Decoration: Hashable, JSONObjectEncodable, Sendable {
             public var isActive: Bool
             /// Distance the decoration extends beyond the decorated text, in
             /// media-dependent units: CSS pixels on EPUB, page points on PDF.
-            ///
-            /// `expand` is a built-in style property: it only applies to the
-            /// built-in decoration styles, not to custom configs.
             public var expand: CGFloat
             public init(tint: UIColor? = nil, isActive: Bool = false, expand: CGFloat = 0) {
                 self.tint = tint
@@ -157,9 +154,6 @@ public struct Decoration: Hashable, JSONObjectEncodable, Sendable {
             public var tint: UIColor?
             /// Distance the decoration extends beyond the decorated text, in
             /// media-dependent units: CSS pixels on EPUB, page points on PDF.
-            ///
-            /// `expand` is a built-in style property: it only applies to the
-            /// built-in decoration styles, not to custom configs.
             public var expand: CGFloat
             public init(tint: UIColor? = nil, expand: CGFloat = 0) {
                 self.tint = tint
@@ -194,19 +188,25 @@ public struct Decoration: Hashable, JSONObjectEncodable, Sendable {
     }
 }
 
-/// Configs supporting the built-in `expand` style property, read by the
-/// layout pipelines of the navigators.
-protocol ExpandableDecorationConfig {
+/// Properties shared by the built-in style configs, read by the rendering
+/// pipelines of the navigators. Custom configs don't get automatic handling
+/// of these properties.
+protocol BuiltInDecorationConfig {
+    /// Tint color of the decoration, when it supports one.
+    var tint: UIColor? { get }
+
+    /// Distance the decoration extends beyond the decorated text, in
+    /// media-dependent units: CSS pixels on EPUB, page points on PDF.
     var expand: CGFloat { get }
 }
 
-extension Decoration.Style.HighlightConfig: ExpandableDecorationConfig {}
-extension Decoration.Style.TintConfig: ExpandableDecorationConfig {}
+extension Decoration.Style.HighlightConfig: BuiltInDecorationConfig {}
+extension Decoration.Style.TintConfig: BuiltInDecorationConfig {}
 
 extension Decoration.Style {
     /// Resolved `expand` value for this style, or 0 when the config doesn't
     /// support the property.
     var expand: CGFloat {
-        (config?.base as? ExpandableDecorationConfig)?.expand ?? 0
+        (config?.base as? BuiltInDecorationConfig)?.expand ?? 0
     }
 }

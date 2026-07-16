@@ -262,13 +262,6 @@ private extension Decoration.Style {
     }
 
     func tint(defaultTint: UIColor) -> UIColor {
-        switch config?.base {
-        case let config as Decoration.Style.TintConfig:
-            return config.tint ?? defaultTint
-        case let config as Decoration.Style.HighlightConfig:
-            return config.tint ?? defaultTint
-        default:
-            return defaultTint
-        }
+        (config?.base as? BuiltInDecorationConfig)?.tint ?? defaultTint
     }
 }
