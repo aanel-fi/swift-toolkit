@@ -22,15 +22,34 @@ public protocol ContentService: PublicationService {
 public final class DefaultContentService: ContentService, Sendable {
     private let publication: Weak<Publication>
     private let resourceContentIteratorFactories: [ResourceContentIteratorFactory]
+    private let pageArtifactDetectors: [PageArtifactDetector]
 
-    public init(publication: Weak<Publication>, resourceContentIteratorFactories: [ResourceContentIteratorFactory]) {
+    /// - Parameters:
+    ///   - resourceContentIteratorFactories: Factories used to create the
+    ///     iterator for each resource, tried in order until there's a match.
+    ///   - pageArtifactDetectors: Detectors used to identify page-boundary
+    ///     noise (page numbers, running headers) when stitching sentences
+    ///     across fixed-layout pages.
+    public init(
+        publication: Weak<Publication>,
+        resourceContentIteratorFactories: [ResourceContentIteratorFactory],
+        pageArtifactDetectors: [PageArtifactDetector] = [PageNumberArtifactDetector(), RunningHeaderArtifactDetector()]
+    ) {
         self.publication = publication
         self.resourceContentIteratorFactories = resourceContentIteratorFactories
+        self.pageArtifactDetectors = pageArtifactDetectors
     }
 
-    public static func makeFactory(resourceContentIteratorFactories: [ResourceContentIteratorFactory]) -> (PublicationServiceContext) -> DefaultContentService? {
+    public static func makeFactory(
+        resourceContentIteratorFactories: [ResourceContentIteratorFactory],
+        pageArtifactDetectors: [PageArtifactDetector] = [PageNumberArtifactDetector(), RunningHeaderArtifactDetector()]
+    ) -> (PublicationServiceContext) -> DefaultContentService? {
         { context in
-            DefaultContentService(publication: context.publication, resourceContentIteratorFactories: resourceContentIteratorFactories)
+            DefaultContentService(
+                publication: context.publication,
+                resourceContentIteratorFactories: resourceContentIteratorFactories,
+                pageArtifactDetectors: pageArtifactDetectors
+            )
         }
     }
 
@@ -38,25 +57,53 @@ public final class DefaultContentService: ContentService, Sendable {
         guard let pub = publication() else {
             return nil
         }
-        return DefaultContent(publication: pub, start: start, resourceContentIteratorFactories: resourceContentIteratorFactories)
+        return DefaultContent(
+            publication: pub,
+            start: start,
+            resourceContentIteratorFactories: resourceContentIteratorFactories,
+            pageArtifactDetectors: pageArtifactDetectors
+        )
     }
 
     private class DefaultContent: Content {
         let publication: Publication
         let start: Locator?
         let resourceContentIteratorFactories: [ResourceContentIteratorFactory]
+        let pageArtifactDetectors: [PageArtifactDetector]
 
-        init(publication: Publication, start: Locator?, resourceContentIteratorFactories: [ResourceContentIteratorFactory]) {
+        init(
+            publication: Publication,
+            start: Locator?,
+            resourceContentIteratorFactories: [ResourceContentIteratorFactory],
+            pageArtifactDetectors: [PageArtifactDetector]
+        ) {
             self.publication = publication
             self.start = start
             self.resourceContentIteratorFactories = resourceContentIteratorFactories
+            self.pageArtifactDetectors = pageArtifactDetectors
         }
 
         func iterator() -> ContentIterator {
-            PublicationContentIterator(
+            let iterator = PublicationContentIterator(
                 publication: publication,
                 start: start,
                 resourceContentIteratorFactories: resourceContentIteratorFactories
+            )
+
+            // Fixed-layout content is paginated by construction, cutting
+            // sentences between pages; stitch them back together.
+            //
+            // Known limitation: this checks the publication-wide layout, so
+            // per-spine-item `rendition:layout` overrides in mixed EPUBs are
+            // ignored.
+            guard publication.metadata.layout == .fixed || publication.conforms(to: .pdf) else {
+                return iterator
+            }
+
+            return SentenceStitchingContentIterator(
+                iterator: iterator,
+                language: publication.metadata.language,
+                artifactDetectors: pageArtifactDetectors
             )
         }
     }

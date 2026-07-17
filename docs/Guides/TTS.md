@@ -52,6 +52,27 @@ The `PublicationSpeechSynthesizer` should be the single source of truth to repre
 
 When pairing the `PublicationSpeechSynthesizer` with a `Navigator`, you can use the `utterance.locator` and `range` properties to highlight spoken utterances and turn pages automatically.
 
+## Fixed-layout publications
+
+With fixed-layout publications (PDF, EPUB FXL), the synthesizer speaks a sentence spanning two pages as a single utterance, and skips page-boundary noise such as page numbers and running headers. See [the Content guide](Content.md) for how the underlying stitching works.
+
+A cross-page utterance is composed of several `parts`, each with a locator targeting its own page. Regular utterances have a single part, so you can treat every utterance uniformly:
+
+* To highlight the spoken sentence with a `DecorableNavigator`, apply one decoration *per part* instead of a single one on `utterance.locator`. This keeps the sentence highlighted on both pages when the navigator turns the page mid-sentence.
+
+```swift
+let decorations = utterance.parts.enumerated().map { index, part in
+    Decoration(
+        id: "tts-utterance-\(index)",
+        locator: part.locator,
+        style: .highlight(tint: .red)
+    )
+}
+navigator.apply(decorations: decorations, in: "tts")
+```
+
+* The `range` of the `.playing` state is already narrowed inside the part containing the spoken word, so passing it to `navigator.go(to:)` turns the page when the speech crosses the page boundary.
+
 ## Configuring the TTS
 
 > [!WARNING]

@@ -31,7 +31,30 @@ All notable changes to this project will be documented in this file. Take a look
 * The `ReadiumInternal` package has been removed. Its utilities were internal helpers and are now folded into `ReadiumShared` with `package` visibility. If you imported `ReadiumInternal` directly, remove the import.
 
 
-<!-- ## [Unreleased] -->
+## [Unreleased]
+
+### Added
+
+#### Shared
+
+* The content of fixed-layout publications (PDF, EPUB FXL) is now stitched across page boundaries: a sentence cut by a page break is re-balanced onto the element where it starts, as linked per-page segments marked with the new `continued` content attribute. See the [Content guide](docs/Guides/Content.md).
+* Page-boundary noise (page numbers, running headers and footers) is now detected in fixed-layout publications and marked with the new `pageArtifact` content attribute. You can customize the detection with your own `PageArtifactDetector` implementations, passed to `DefaultContentService.makeFactory()`.
+
+#### Navigator
+
+* `PublicationSpeechSynthesizer` now speaks a sentence spanning two fixed-layout pages as a single utterance, and skips page numbers and running headers. See the [TTS guide](docs/Guides/TTS.md).
+
+### Changed
+
+#### Navigator
+
+* `PublicationSpeechSynthesizer.Utterance` gains an ordered `parts` list with per-part locators, used to render a cross-page sentence on each of its pages and to turn the page when the speech crosses the boundary (via `utterance.locator(forSpokenRange:)`). The existing `text` and `locator` properties are unchanged for single-part utterances.
+
+### Fixed
+
+#### Shared
+
+* `PDFResourceContentIterator` now starts *past* the last page when given a locator with a progression of 1.0, consistently with `HTMLResourceContentIterator`. Backward iteration across the resources of a multi-PDF publication no longer skips the last page of the previous resource.
 
 ## [3.11.0] - 2026-07-17
 
