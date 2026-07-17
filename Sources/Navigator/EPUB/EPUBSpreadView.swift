@@ -497,6 +497,13 @@ class EPUBSpreadView: UIView, Loggable, PageView {
         fatalError("go(to:) must be implemented in subclasses")
     }
 
+    func pageDidBecomeInvisible() {
+        // Pauses any HTML media element (e.g. `<audio>` or `<video>`) still
+        // playing after turning the page.
+        // See https://github.com/readium/swift-toolkit/issues/121
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+    }
+
     enum Direction: CustomStringConvertible {
         case left
         case right
