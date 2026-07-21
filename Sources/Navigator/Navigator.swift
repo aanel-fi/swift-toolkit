@@ -10,9 +10,6 @@ import SafariServices
 
 @MainActor
 public protocol Navigator: AnyObject {
-    /// Publication being rendered.
-    var publication: Publication { get }
-
     /// Current position in the publication.
     /// Can be used to save a bookmark to the current position.
     var currentLocation: Locator? { get }

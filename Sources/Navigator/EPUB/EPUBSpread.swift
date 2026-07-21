@@ -86,22 +86,23 @@ enum EPUBSpread: EPUBSpreadProtocol {
         (try? json(forBaseURL: baseURL, readingProgression: readingProgression).jsonString()) ?? "[]"
     }
 
-    /// Builds a list of spreads for the given Publication.
+    /// Builds a list of spreads for the given rendition.
     ///
     /// - Parameters:
-    ///   - publication: The Publication to build the spreads for.
+    ///   - metadata: Metadata of the rendition to build the spreads for.
+    ///   - readingOrder: Resources to lay out, in reading order.
     ///   - readingProgression: Reading progression direction used to layout the pages.
     ///   - spread: Indicates whether two pages are displayed side-by-side.
     ///   - offsetFirstPage: Indicates if the first page should be displayed in its own spread.
     static func makeSpreads(
-        for publication: Publication,
+        metadata: Metadata,
         readingOrder: [Link],
         readingProgression: ReadingProgression,
         spread: Bool,
         offsetFirstPage: Bool? = nil
     ) -> [EPUBSpread] {
         spread
-            ? makeTwoPagesSpreads(for: publication, readingOrder: readingOrder, readingProgression: readingProgression, offsetFirstPage: offsetFirstPage)
+            ? makeTwoPagesSpreads(metadata: metadata, readingOrder: readingOrder, readingProgression: readingProgression, offsetFirstPage: offsetFirstPage)
             : makeOnePageSpreads(readingOrder: readingOrder)
     }
 
@@ -116,12 +117,12 @@ enum EPUBSpread: EPUBSpreadProtocol {
         }
     }
 
-    /// Builds a list of two-page spreads for the given Publication.
+    /// Builds a list of two-page spreads for the given rendition.
     ///
     /// `offsetFirstPage` is the user preference used to control if the first
     /// resource is displayed on its own.
     private static func makeTwoPagesSpreads(
-        for publication: Publication,
+        metadata: Metadata,
         readingOrder: [Link],
         readingProgression: ReadingProgression,
         offsetFirstPage: Bool?
@@ -138,7 +139,7 @@ enum EPUBSpread: EPUBSpreadProtocol {
                 if let offsetFirstPage = offsetFirstPage {
                     // User explicitly chose to offset (or not) the first page.
                     first.properties.page = offsetFirstPage ? .center : nil
-                } else if first.properties.page == nil, publication.metadata.layout == .fixed {
+                } else if first.properties.page == nil, metadata.layout == .fixed {
                     // For FXL publications, default to displaying the first
                     // page (typically a cover) on its own when the publication
                     // doesn't provide an explicit page position. This is the
@@ -157,8 +158,8 @@ enum EPUBSpread: EPUBSpreadProtocol {
             // (Properties.Page).
             if
                 let second = readingOrder.getOrNil(nextIndex),
-                publication.metadata.layout == .fixed,
-                areConsecutive(first, second, readingProgression: publication.metadata.readingProgression)
+                metadata.layout == .fixed,
+                areConsecutive(first, second, readingProgression: metadata.readingProgression)
             {
                 spreads.append(.double(
                     EPUBDoubleSpread(

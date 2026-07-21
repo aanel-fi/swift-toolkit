@@ -103,11 +103,12 @@ final class EditingActionsController {
 
     init(
         actions: [EditingAction],
-        publication: Publication
+        rights: any UserRights,
+        canShare: Bool
     ) {
         self.actions = actions
-        rights = publication.rights
-        canShare = !publication.isProtected
+        self.rights = rights
+        self.canShare = canShare
     }
 
     /// Current user selection contents and frame in the publication view.

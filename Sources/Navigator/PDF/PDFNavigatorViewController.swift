@@ -93,7 +93,8 @@ open class PDFNavigatorViewController:
         self.delegate = delegate
         editingActions = EditingActionsController(
             actions: config.editingActions,
-            publication: publication
+            rights: publication.rights,
+            canShare: !publication.isProtected
         )
 
         settings = PDFSettings(

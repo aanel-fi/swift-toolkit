@@ -90,6 +90,25 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         /// Logs the state changes when true.
         public var debugState: Bool
 
+        /// Converts a ``Link`` into a ``Locator``, used when the navigator
+        /// cannot compute a location from the positions list.
+        ///
+        /// When nil, a locator is derived from the ``Link`` itself.
+        public var locate: (@Sendable (Link) async -> Locator?)?
+
+        /// Provides the table of contents, used to title the current location.
+        ///
+        /// When nil, locations have no title.
+        public var tableOfContents: (@Sendable () async -> [Link])?
+
+        /// User rights enforced when performing editing actions such as copy.
+        ///
+        /// Defaults to unrestricted rights.
+        public var userRights: any UserRights
+
+        /// Whether the share editing action is allowed.
+        public var canShare: Bool
+
         @MainActor
         public init(
             preferences: EPUBPreferences = .empty,
@@ -105,7 +124,11 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             decorationTemplates: [Decoration.Style.Id: HTMLDecorationTemplate] = HTMLDecorationTemplate.defaultTemplates(),
             fontFamilyDeclarations: [AnyHTMLFontFamilyDeclaration] = [],
             readiumCSSRSProperties: CSSRSProperties = CSSRSProperties(),
-            debugState: Bool = false
+            debugState: Bool = false,
+            locate: (@Sendable (Link) async -> Locator?)? = nil,
+            tableOfContents: (@Sendable () async -> [Link])? = nil,
+            userRights: any UserRights = UnrestrictedUserRights(),
+            canShare: Bool = true
         ) {
             self.preferences = preferences
             self.defaults = defaults
@@ -118,6 +141,10 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             self.fontFamilyDeclarations = fontFamilyDeclarations
             self.readiumCSSRSProperties = readiumCSSRSProperties
             self.debugState = debugState
+            self.locate = locate
+            self.tableOfContents = tableOfContents
+            self.userRights = userRights
+            self.canShare = canShare
         }
 
         func contentInset(for sizeClass: UIUserInterfaceSizeClass) -> EPUBContentInsets {
@@ -250,8 +277,10 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     private var positionsByReadingOrder: [[Locator]] = []
 
     private let viewModel: EPUBNavigatorViewModel
-    public var publication: Publication {
-        viewModel.publication
+
+    /// The rendition rendered by this navigator.
+    public var source: any EPUBRenditionSource {
+        viewModel.source
     }
 
     var config: Configuration {
@@ -273,35 +302,94 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         readingOrder: [Link]? = nil,
         config: Configuration = .init()
     ) throws {
-        precondition(readingOrder.map { !$0.isEmpty } ?? true)
-
         guard !publication.isRestricted else {
             throw EPUBError.publicationRestricted
         }
 
-        let viewModel = EPUBNavigatorViewModel(
-            publication: publication,
-            readingOrder: readingOrder ?? publication.readingOrder,
+        var config = config
+        if config.locate == nil {
+            config.locate = { await publication.locate($0) }
+        }
+        if config.tableOfContents == nil {
+            config.tableOfContents = { (try? await publication.tableOfContents().get()) ?? [] }
+        }
+        config.userRights = publication.rights
+        config.canShare = !publication.isProtected
+
+        self.init(
+            source: publication,
+            initialLocation: initialLocation,
+            readingOrder: readingOrder,
             config: config
         )
+    }
 
-        // Positions and total progression only make sense in the context
-        // of the publication's actual reading order. Therefore when
-        // provided with a different reading order, we should assume the
-        // positions list is empty, and also not compute the
-        // totalProgression when calculating the current locator.
-        let positionsByReadingOrderClosure: () async -> ReadResult<[[Locator]]>
-        if readingOrder != nil {
-            positionsByReadingOrderClosure = { .success([]) }
-        } else {
-            positionsByReadingOrderClosure = { await publication.positionsByReadingOrder() }
-        }
+    /// Creates a new instance of `EPUBNavigatorViewController`.
+    ///
+    /// - Parameters:
+    ///   - source: Rendition to render.
+    ///   - initialLocation: Starting location in the rendition, defaults to
+    ///   the beginning.
+    ///   - readingOrder: Custom order of resources to display. Used for example
+    ///   to display a non-linear resource on its own.
+    ///   - config: Additional navigator configuration.
+    public convenience init(
+        source: any EPUBRenditionSource & PositionsSource,
+        initialLocation: Locator?,
+        readingOrder: [Link]? = nil,
+        config: Configuration = .init()
+    ) {
+        // Positions and total progression only make sense in the context of the
+        // rendition's actual reading order. Therefore when provided with a
+        // different reading order, we should assume the positions list is
+        // empty, and also not compute the totalProgression when calculating the
+        // current locator.
+        let positions: () async -> ReadResult<[[Locator]]> =
+            (readingOrder != nil)
+                ? { .success([]) }
+                : { await source.positionsByReadingOrder() }
+
+        self.init(
+            source: source,
+            initialLocation: initialLocation,
+            readingOrder: readingOrder,
+            positionsByReadingOrder: positions,
+            config: config
+        )
+    }
+
+    /// Creates a new instance of `EPUBNavigatorViewController` for a rendition
+    /// without a positions list.
+    ///
+    /// - Parameters:
+    ///   - source: Rendition to render.
+    ///   - initialLocation: Starting location in the rendition, defaults to
+    ///   the beginning.
+    ///   - readingOrder: Custom order of resources to display. Used for example
+    ///   to display a non-linear resource on its own.
+    ///   - positionsByReadingOrder: Provides the rendition positions, grouped
+    ///   by reading order index.
+    ///   - config: Additional navigator configuration.
+    public convenience init(
+        source: any EPUBRenditionSource,
+        initialLocation: Locator?,
+        readingOrder: [Link]? = nil,
+        positionsByReadingOrder: @escaping () async -> ReadResult<[[Locator]]>,
+        config: Configuration = .init()
+    ) {
+        precondition(readingOrder.map { !$0.isEmpty } ?? true)
+
+        let viewModel = EPUBNavigatorViewModel(
+            source: source,
+            readingOrder: readingOrder ?? source.readingOrder,
+            config: config
+        )
 
         self.init(
             viewModel: viewModel,
             initialLocation: initialLocation,
             readingOrder: viewModel.readingOrder,
-            positionsByReadingOrder: positionsByReadingOrderClosure
+            positionsByReadingOrder: positionsByReadingOrder
         )
     }
 
@@ -467,7 +555,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         get async { await tableOfContentsTitleByHrefTask.value }
     }
 
-    private lazy var tableOfContentsTitleByHrefTask: Task<[AnyURL: String], Never> = Task {
+    private lazy var tableOfContentsTitleByHrefTask: Task<[AnyURL: String], Never> = Task { [tableOfContents = config.tableOfContents] in
         func fulfill(linkList: [Link]) -> [AnyURL: String] {
             var result = [AnyURL: String]()
 
@@ -483,11 +571,11 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             return result
         }
 
-        guard let toc = try? await publication.tableOfContents().get() else {
+        guard let tableOfContents else {
             return [:]
         }
 
-        return fulfill(linkList: toc)
+        return fulfill(linkList: await tableOfContents())
     }
 
     /// Goes to the next or previous page in the given scroll direction.
@@ -589,7 +677,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         }
 
         spreads = EPUBSpread.makeSpreads(
-            for: publication,
+            metadata: source.metadata,
             readingOrder: readingOrder,
             readingProgression: viewModel.readingProgression,
             spread: viewModel.spreadEnabled,
@@ -669,7 +757,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             readingOrder: readingOrder,
             positionsByReadingOrder: positionsByReadingOrder,
             tableOfContentsTitleByHref: tableOfContentsTitleByHref,
-            fallbackLocator: { [publication] in await publication.locate($0) }
+            fallbackLocator: { [locate = config.locate] in await locate?($0) }
         )
         return (locator, viewport)
     }
@@ -707,7 +795,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     }
 
     public func go(to locator: Locator, options: NavigatorGoOptions) async -> Bool {
-        let locator = publication.normalizeLocator(locator)
+        let locator = source.normalizeLocator(locator)
 
         guard
             let paginationView = paginationView,
@@ -727,7 +815,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     }
 
     public func go(to link: Link, options: NavigatorGoOptions) async -> Bool {
-        guard let locator = await publication.locate(link) else {
+        guard let locate = config.locate, let locator = await locate(link) else {
             return false
         }
         return await go(to: locator, options: options)
@@ -815,7 +903,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             let source = self.decorations[group] ?? []
             let target = decorations.map {
                 var d = $0
-                d.locator = self.publication.normalizeLocator(d.locator)
+                d.locator = self.source.normalizeLocator(d.locator)
                 return DiffableDecoration(decoration: d)
             }
             self.decorations[group] = target
@@ -1036,7 +1124,7 @@ extension EPUBNavigatorViewController: EPUBSpreadViewDelegate {
         // the application's bars.
         var insets = view.window?.safeAreaInsets ?? .zero
 
-        switch publication.metadata.epubLayout {
+        switch source.metadata.epubLayout {
         case .fixed:
             // With iPadOS and macOS, we aim to display content edge-to-edge
             // since there are no physical notches or Dynamic Island like on the
@@ -1120,7 +1208,7 @@ extension EPUBNavigatorViewController: EPUBSpreadViewDelegate {
     func spreadView(_ spreadView: EPUBSpreadView, didTapOnInternalLink href: String, clickEvent: ClickEvent?) {
         guard
             let url = AnyURL(string: href),
-            var link = publication.linkWithHREF(url)
+            var link = source.linkWithHREF(url)
         else {
             log(.warning, "Cannot find link with HREF: \(href)")
             return
@@ -1181,7 +1269,7 @@ extension EPUBNavigatorViewController: EPUBSpreadViewDelegate {
             }
 
             // Read the note's resource through the publication's resource API.
-            guard let resource = publication.get(url.removingFragment()) else {
+            guard let resource = source.resource(at: url.removingFragment()) else {
                 log(.warning, "Could not open note resource: \(href)")
                 return nil
             }
@@ -1258,7 +1346,7 @@ extension EPUBNavigatorViewController: EditingActionsControllerDelegate {
 extension EPUBNavigatorViewController: PaginationViewDelegate {
     func paginationView(_ paginationView: PaginationView, pageViewAtIndex index: Int) -> (UIView & PageView)? {
         let spread = spreads[index]
-        let spreadViewType = (publication.metadata.layout == .fixed) ? EPUBFixedSpreadView.self : EPUBReflowableSpreadView.self
+        let spreadViewType = (source.metadata.layout == .fixed) ? EPUBFixedSpreadView.self : EPUBReflowableSpreadView.self
         let spreadView = spreadViewType.init(
             viewModel: viewModel,
             spread: spread,

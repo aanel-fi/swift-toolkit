@@ -22,7 +22,7 @@ enum EPUBScriptScope {
 }
 
 @MainActor final class EPUBNavigatorViewModel: Loggable {
-    let publication: Publication
+    let source: any EPUBRenditionSource
     let config: EPUBNavigatorViewController.Configuration
     let editingActions: EditingActionsController
 
@@ -45,7 +45,7 @@ enum EPUBScriptScope {
     let readingOrder: ReadingOrder
 
     convenience init(
-        publication: Publication,
+        source: any EPUBRenditionSource,
         readingOrder: ReadingOrder,
         config: EPUBNavigatorViewController.Configuration
     ) {
@@ -59,7 +59,7 @@ enum EPUBScriptScope {
         let assetsBaseURL = server.serve(directory: assetsDirectory, at: "assets")
 
         self.init(
-            publication: publication,
+            source: source,
             readingOrder: readingOrder,
             config: config,
             server: server,
@@ -67,7 +67,7 @@ enum EPUBScriptScope {
             formatSniffer: formatSniffer
         )
 
-        if let url = publication.baseURL {
+        if let url = source.baseURL {
             // The publication already has an HTTP base URL (e.g. served
             // remotely). Use it directly; the server only needs to serve
             // assets.
@@ -81,7 +81,7 @@ enum EPUBScriptScope {
     }
 
     private init(
-        publication: Publication,
+        source: any EPUBRenditionSource,
         readingOrder: ReadingOrder,
         config: EPUBNavigatorViewController.Configuration,
         server: WebViewServer,
@@ -116,12 +116,13 @@ enum EPUBScriptScope {
             )
         }
 
-        self.publication = publication
+        self.source = source
         self.readingOrder = readingOrder
         self.config = config
         editingActions = EditingActionsController(
             actions: config.editingActions,
-            publication: publication
+            rights: config.userRights,
+            canShare: config.canShare
         )
         self.server = server
         self.assetsBaseURL = assetsBaseURL
@@ -129,7 +130,7 @@ enum EPUBScriptScope {
         servedFonts = server.serve(config.fontFamilyDeclarations)
 
         preferences = config.preferences
-        settings = EPUBSettings(publication: publication, config: config)
+        settings = EPUBSettings(metadata: source.metadata, config: config)
 
         css = ReadiumCSS(
             layout: CSSLayout(),
@@ -171,7 +172,7 @@ enum EPUBScriptScope {
     // MARK: - Web View Server
 
     private func serve(href: RelativeURL) async -> (Resource, MediaType)? {
-        guard var resource = publication.get(href) else {
+        guard var resource = source.resource(at: href) else {
             return nil
         }
         let mediaType = await resolveMediaType(for: resource, at: href)
@@ -187,7 +188,7 @@ enum EPUBScriptScope {
     /// The manifest takes precedence because a file with a `.xml` extension
     /// might be declared as `application/xhtml+xml` in the OPF.
     private func resolveMediaType(for resource: Resource, at href: RelativeURL) async -> MediaType {
-        if let mediaType = publication.linkWithHREF(href)?.mediaType {
+        if let mediaType = source.linkWithHREF(href)?.mediaType {
             return mediaType
         }
         if let mediaType = await resource.properties().getOrNil()?.mediaType {
@@ -215,7 +216,7 @@ enum EPUBScriptScope {
         let oldSettings = settings
         let newSettings = EPUBSettings(
             preferences: preferences,
-            publication: publication,
+            metadata: source.metadata,
             config: config
         )
 
@@ -243,7 +244,7 @@ enum EPUBScriptScope {
     func editor(of preferences: EPUBPreferences) -> EPUBPreferencesEditor {
         EPUBPreferencesEditor(
             initialPreferences: preferences,
-            metadata: publication.metadata,
+            metadata: source.metadata,
             defaults: config.defaults
         )
     }
@@ -311,9 +312,9 @@ enum EPUBScriptScope {
 
     func injectReadiumCSS<HREF: URLConvertible>(in resource: Resource, at href: HREF) -> Resource {
         guard
-            let link = publication.linkWithHREF(href),
+            let link = source.linkWithHREF(href),
             link.mediaType?.isHTML == true,
-            publication.metadata.epubLayout == .reflowable
+            source.metadata.epubLayout == .reflowable
         else {
             return resource
         }
@@ -403,13 +404,13 @@ private extension EPUBSettings {
     @MainActor
     init(
         preferences: EPUBPreferences? = nil,
-        publication: Publication,
+        metadata: Metadata,
         config: EPUBNavigatorViewController.Configuration
     ) {
         self.init(
             preferences: preferences ?? config.preferences,
             defaults: config.defaults,
-            metadata: publication.metadata
+            metadata: metadata
         )
 
         // Force-enables scroll when VoiceOver is running, because pagination

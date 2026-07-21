@@ -315,7 +315,7 @@ class EPUBSpreadView: UIView, Loggable, PageView {
         // metadata (media type, etc.). For resources not in the manifest (e.g.
         // external http:// images) we synthesise a plain Link.
         let embeddedLink: Link? = src.flatMap {
-            viewModel.publication.linkWithHREF($0) ?? Link(href: $0.string)
+            viewModel.source.linkWithHREF($0) ?? Link(href: $0.string)
         }
 
         var attributes: [ContentAttribute] = []

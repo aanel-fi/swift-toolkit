@@ -87,7 +87,7 @@ class FixtureListViewModel: ObservableObject {
         let publication = try await container.publication(at: fileURL)
         let navigator = try container.navigator(for: publication)
 
-        readerViewModel = ReaderViewModel(navigator: navigator)
+        readerViewModel = ReaderViewModel(navigator: navigator, publication: publication)
     }
 }
 

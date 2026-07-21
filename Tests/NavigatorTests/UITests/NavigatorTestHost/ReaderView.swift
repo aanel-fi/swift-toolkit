@@ -54,11 +54,16 @@ struct ReaderView: View {
 
     let navigator: VisualNavigator & UIViewController
 
+    /// The navigator no longer exposes its publication, so the host injects it
+    /// separately to drive the stress test.
+    let publication: Publication
+
     @Published var isReady: Bool = false
     @Published var stressTestCompleted: Bool = false
 
-    init(navigator: VisualNavigator & UIViewController) {
+    init(navigator: VisualNavigator & UIViewController, publication: Publication) {
         self.navigator = navigator
+        self.publication = publication
 
         if let epubNavigator = navigator as? EPUBNavigatorViewController {
             epubNavigator.delegate = self
@@ -69,7 +74,6 @@ struct ReaderView: View {
 
     func runNavigationStressTest() {
         Task {
-            let publication = navigator.publication
             let readingOrder = publication.readingOrder
             guard let positionsByReadingOrder = await publication.positionsByReadingOrder().getOrNil() else { return }
 

@@ -46,8 +46,11 @@ struct EditingActionsControllerTests {
     )
 
     private func makeController(_ delegate: FakeDelegate) -> EditingActionsController {
-        let publication = Publication(manifest: Manifest(metadata: Metadata(title: "Test"), links: [], readingOrder: []))
-        let controller = EditingActionsController(actions: [highlight, .copy], publication: publication)
+        let controller = EditingActionsController(
+            actions: [highlight, .copy],
+            rights: UnrestrictedUserRights(),
+            canShare: true
+        )
         controller.delegate = delegate
         return controller
     }

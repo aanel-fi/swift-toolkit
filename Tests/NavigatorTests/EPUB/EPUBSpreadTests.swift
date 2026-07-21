@@ -12,19 +12,19 @@ enum EPUBSpreadTests {
     @Suite("Single pages") struct SinglePages {
         @Test("with an empty reading order")
         func emptyReadingOrder() {
-            let pub = fxlPublication(readingOrder: [])
-            let spreads = makeSpreads(publication: pub, spread: false)
+            let rendition = fxlRendition(readingOrder: [])
+            let spreads = makeSpreads(rendition: rendition, spread: false)
             #expect(spreads.isEmpty)
         }
 
         @Test("each link produces a single spread")
         func multipleLinks() {
-            let pub = fxlPublication(readingOrder: [
+            let rendition = fxlRendition(readingOrder: [
                 link("p1.html"),
                 link("p2.html"),
                 link("p3.html"),
             ])
-            let spreads = makeSpreads(publication: pub, spread: false)
+            let spreads = makeSpreads(rendition: rendition, spread: false)
 
             #expect(spreads.count == 3)
             for (i, spread) in spreads.enumerated() {
@@ -40,12 +40,12 @@ enum EPUBSpreadTests {
     @Suite("Dual pages") struct DualPages {
         @Test("never combines reflowable pages")
         func neverCombinesReflowable() {
-            let pub = reflowablePublication(readingOrder: [
+            let rendition = reflowableRendition(readingOrder: [
                 link("c1.html"),
                 link("c2.html"),
                 link("c3.html"),
             ])
-            let spreads = makeSpreads(publication: pub, spread: true)
+            let spreads = makeSpreads(rendition: rendition, spread: true)
 
             #expect(spreads.count == 3)
             for spread in spreads {
@@ -60,12 +60,12 @@ enum EPUBSpreadTests {
             @Suite("First page position") struct FirstPagePosition {
                 @Test("defaults to center when no page property")
                 func firstPageDefaultsToCenter() {
-                    let pub = fxlPublication(readingOrder: [
+                    let rendition = fxlRendition(readingOrder: [
                         link("cover.html"),
                         link("p1.html", page: .left),
                         link("p2.html", page: .right),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true)
 
                     #expect(spreads.count == 2)
                     guard case let .single(cover) = spreads[0] else {
@@ -81,12 +81,12 @@ enum EPUBSpreadTests {
 
                 @Test("offsetFirstPage: true keeps first page single")
                 func offsetFirstPageTrue() {
-                    let pub = fxlPublication(readingOrder: [
+                    let rendition = fxlRendition(readingOrder: [
                         link("cover.html"),
                         link("p1.html", page: .left),
                         link("p2.html", page: .right),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true, offsetFirstPage: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true, offsetFirstPage: true)
 
                     #expect(spreads.count == 2)
                     guard case .single = spreads[0] else {
@@ -97,11 +97,11 @@ enum EPUBSpreadTests {
 
                 @Test("offsetFirstPage: false allows first page to combine")
                 func offsetFirstPageFalse() {
-                    let pub = fxlPublication(readingOrder: [
+                    let rendition = fxlRendition(readingOrder: [
                         link("p1.html"),
                         link("p2.html"),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true, offsetFirstPage: false)
+                    let spreads = makeSpreads(rendition: rendition, spread: true, offsetFirstPage: false)
 
                     #expect(spreads.count == 1)
                     guard case .double = spreads[0] else {
@@ -112,11 +112,11 @@ enum EPUBSpreadTests {
 
                 @Test("explicit .left on first page is preserved")
                 func firstPageExplicitLeftKeepsIt() {
-                    let pub = fxlPublication(readingOrder: [
+                    let rendition = fxlRendition(readingOrder: [
                         link("p1.html", page: .left),
                         link("p2.html", page: .right),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true)
 
                     #expect(spreads.count == 1)
                     guard case .double = spreads[0] else {
@@ -129,12 +129,12 @@ enum EPUBSpreadTests {
             @Suite("Page pairing (LTR)") struct PairingLTR {
                 @Test("left + right pages are combined")
                 func leftRightCombined() {
-                    let pub = fxlPublication(readingProgression: .ltr, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .ltr, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html", page: .left),
                         link("p2.html", page: .right),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true)
 
                     #expect(spreads.count == 2)
                     guard case let .double(d) = spreads[1] else {
@@ -147,12 +147,12 @@ enum EPUBSpreadTests {
 
                 @Test("right + left pages are not combined")
                 func rightLeftNotCombined() {
-                    let pub = fxlPublication(readingProgression: .ltr, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .ltr, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html", page: .right),
                         link("p2.html", page: .left),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true)
 
                     #expect(spreads.count == 3)
                     for spread in spreads {
@@ -165,12 +165,12 @@ enum EPUBSpreadTests {
 
                 @Test("nil + nil defaults to left + right")
                 func nilNilDefaultsToLeftRight() {
-                    let pub = fxlPublication(readingProgression: .ltr, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .ltr, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html"),
                         link("p2.html"),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true)
 
                     #expect(spreads.count == 2)
                     guard case .double = spreads[1] else {
@@ -181,25 +181,25 @@ enum EPUBSpreadTests {
 
                 @Test("center + left pages are not combined")
                 func centerLeftNotCombined() {
-                    let pub = fxlPublication(readingProgression: .ltr, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .ltr, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html", page: .center),
                         link("p2.html", page: .left),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true)
 
                     #expect(spreads.count == 3)
                 }
 
                 @Test("odd number of pages leaves last page single")
                 func oddNumberLastPageSingle() {
-                    let pub = fxlPublication(readingProgression: .ltr, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .ltr, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html", page: .left),
                         link("p2.html", page: .right),
                         link("p3.html", page: .left),
                     ])
-                    let spreads = makeSpreads(publication: pub, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, spread: true)
 
                     #expect(spreads.count == 3)
                     guard case .single = spreads[0] else {
@@ -221,12 +221,12 @@ enum EPUBSpreadTests {
             @Suite("Page pairing (RTL)") struct PairingRTL {
                 @Test("right + left pages are combined")
                 func rightLeftCombined() {
-                    let pub = fxlPublication(readingProgression: .rtl, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .rtl, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html", page: .right),
                         link("p2.html", page: .left),
                     ])
-                    let spreads = makeSpreads(publication: pub, readingProgression: .rtl, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, readingProgression: .rtl, spread: true)
 
                     #expect(spreads.count == 2)
                     guard case let .double(d) = spreads[1] else {
@@ -239,24 +239,24 @@ enum EPUBSpreadTests {
 
                 @Test("left + right pages are not combined")
                 func leftRightNotCombined() {
-                    let pub = fxlPublication(readingProgression: .rtl, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .rtl, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html", page: .left),
                         link("p2.html", page: .right),
                     ])
-                    let spreads = makeSpreads(publication: pub, readingProgression: .rtl, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, readingProgression: .rtl, spread: true)
 
                     #expect(spreads.count == 3)
                 }
 
                 @Test("nil + nil defaults to right + left")
                 func nilNilDefaultsToRightLeft() {
-                    let pub = fxlPublication(readingProgression: .rtl, readingOrder: [
+                    let rendition = fxlRendition(readingProgression: .rtl, readingOrder: [
                         link("cover.html", page: .center),
                         link("p1.html"),
                         link("p2.html"),
                     ])
-                    let spreads = makeSpreads(publication: pub, readingProgression: .rtl, spread: true)
+                    let spreads = makeSpreads(rendition: rendition, readingProgression: .rtl, spread: true)
 
                     #expect(spreads.count == 2)
                     guard case .double = spreads[1] else {
@@ -437,40 +437,42 @@ private func link(_ href: String, page: Properties.Page? = nil) -> Link {
     return Link(href: href, properties: properties)
 }
 
-private func fxlPublication(
+/// The manifest values `EPUBSpread.makeSpreads` actually reads.
+private struct TestRendition {
+    let metadata: Metadata
+    let readingOrder: [Link]
+}
+
+private func fxlRendition(
     readingProgression: ReadiumShared.ReadingProgression = .auto,
     readingOrder: [Link]
-) -> Publication {
-    Publication(
-        manifest: Manifest(
-            metadata: Metadata(
-                title: "FXL",
-                layout: .fixed,
-                readingProgression: readingProgression
-            ),
-            readingOrder: readingOrder
-        )
+) -> TestRendition {
+    TestRendition(
+        metadata: Metadata(
+            title: "FXL",
+            layout: .fixed,
+            readingProgression: readingProgression
+        ),
+        readingOrder: readingOrder
     )
 }
 
-private func reflowablePublication(readingOrder: [Link]) -> Publication {
-    Publication(
-        manifest: Manifest(
-            metadata: Metadata(title: "Reflowable"),
-            readingOrder: readingOrder
-        )
+private func reflowableRendition(readingOrder: [Link]) -> TestRendition {
+    TestRendition(
+        metadata: Metadata(title: "Reflowable"),
+        readingOrder: readingOrder
     )
 }
 
 private func makeSpreads(
-    publication: Publication,
+    rendition: TestRendition,
     readingProgression: ReadiumNavigator.ReadingProgression = .ltr,
     spread: Bool,
     offsetFirstPage: Bool? = nil
 ) -> [EPUBSpread] {
     EPUBSpread.makeSpreads(
-        for: publication,
-        readingOrder: publication.readingOrder,
+        metadata: rendition.metadata,
+        readingOrder: rendition.readingOrder,
         readingProgression: readingProgression,
         spread: spread,
         offsetFirstPage: offsetFirstPage
