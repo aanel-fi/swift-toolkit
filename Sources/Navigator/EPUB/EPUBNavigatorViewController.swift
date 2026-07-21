@@ -93,7 +93,9 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         /// Converts a ``Link`` into a ``Locator``, used when the navigator
         /// cannot compute a location from the positions list.
         ///
-        /// When nil, a locator is derived from the ``Link`` itself.
+        /// When nil, or when it returns nil, the navigator falls back to
+        /// ``EPUBRenditionSource/locate(_:)``, which derives a locator from the
+        /// manifest.
         public var locate: (@Sendable (Link) async -> Locator?)?
 
         /// Provides the table of contents, used to title the current location.
@@ -313,6 +315,9 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         if config.tableOfContents == nil {
             config.tableOfContents = { (try? await publication.tableOfContents().get()) ?? [] }
         }
+        // Unlike `locate`/`tableOfContents`, these overwrite any caller-supplied value: for a
+        // `Publication`, the content protection is authoritative, and a caller must not be able to
+        // widen its own rights by passing a `Configuration`.
         config.userRights = publication.rights
         config.canShare = !publication.isProtected
 
@@ -757,7 +762,9 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             readingOrder: readingOrder,
             positionsByReadingOrder: positionsByReadingOrder,
             tableOfContentsTitleByHref: tableOfContentsTitleByHref,
-            fallbackLocator: { [locate = config.locate] in await locate?($0) }
+            fallbackLocator: { [locate = config.locate, source] in
+                await locate?($0) ?? source.locate($0)
+            }
         )
         return (locator, viewport)
     }
@@ -815,7 +822,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     }
 
     public func go(to link: Link, options: NavigatorGoOptions) async -> Bool {
-        guard let locate = config.locate, let locator = await locate(link) else {
+        guard let locator = await config.locate?(link) ?? source.locate(link) else {
             return false
         }
         return await go(to: locator, options: options)

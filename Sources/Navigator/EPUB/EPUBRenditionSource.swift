@@ -65,6 +65,35 @@ public extension EPUBRenditionSource {
 
         return locator
     }
+
+    /// Converts a ``Link`` into a ``Locator`` pointing at the start of the
+    /// resource it targets.
+    ///
+    /// Derived from the manifest, mirroring ``DefaultLocatorService``. Renditions
+    /// backed by a positions list can do better; the navigator prefers
+    /// ``EPUBNavigatorViewController/Configuration/locate`` when one is set.
+    func locate(_ link: Link) -> Locator? {
+        let originalHREF = link.url()
+        let fragment = originalHREF.fragment
+        let href = originalHREF.removingFragment()
+
+        guard
+            let resourceLink = linkWithHREF(href),
+            let mediaType = resourceLink.mediaType
+        else {
+            return nil
+        }
+
+        return Locator(
+            href: href,
+            mediaType: mediaType,
+            title: resourceLink.title ?? link.title,
+            locations: Locator.Locations(
+                fragments: Array(ofNotNil: fragment),
+                progression: (fragment == nil) ? 0.0 : nil
+            )
+        )
+    }
 }
 
 /// Optional capability: a rendition able to provide a list of discrete
