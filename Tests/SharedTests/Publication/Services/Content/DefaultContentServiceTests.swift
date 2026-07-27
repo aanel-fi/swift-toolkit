@@ -11,19 +11,19 @@ struct DefaultContentServiceTests {
     @Test func reflowablePublicationUsesPlainIterator() throws {
         let publication = makePublication(layout: nil)
         let iterator = try makeIterator(for: publication)
-        #expect(!(iterator is SentenceStitchingContentIterator))
+        #expect(!(iterator is SentenceContentIterator))
     }
 
-    @Test func fixedLayoutPublicationUsesSentenceStitching() throws {
+    @Test func fixedLayoutPublicationUsesSentenceResegmentation() throws {
         let publication = makePublication(layout: .fixed)
         let iterator = try makeIterator(for: publication)
-        #expect(iterator is SentenceStitchingContentIterator)
+        #expect(iterator is SentenceContentIterator)
     }
 
-    @Test func pdfPublicationUsesSentenceStitching() throws {
+    @Test func pdfPublicationUsesSentenceResegmentation() throws {
         let publication = makePublication(layout: nil, mediaType: .pdf)
         let iterator = try makeIterator(for: publication)
-        #expect(iterator is SentenceStitchingContentIterator)
+        #expect(iterator is SentenceContentIterator)
     }
 
     private func makePublication(layout: Layout?, mediaType: MediaType = .xhtml) -> Publication {

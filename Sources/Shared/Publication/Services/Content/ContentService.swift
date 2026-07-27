@@ -23,32 +23,40 @@ public final class DefaultContentService: ContentService, Sendable {
     private let publication: Weak<Publication>
     private let resourceContentIteratorFactories: [ResourceContentIteratorFactory]
     private let pageArtifactDetectors: [PageArtifactDetector]
+    private let hardBreakDetectors: [HardBreakDetector]
 
     /// - Parameters:
     ///   - resourceContentIteratorFactories: Factories used to create the
     ///     iterator for each resource, tried in order until there's a match.
     ///   - pageArtifactDetectors: Detectors used to identify page-boundary
-    ///     noise (page numbers, running headers) when stitching sentences
-    ///     across fixed-layout pages.
+    ///     noise (page numbers, running headers) when re-segmenting
+    ///     fixed-layout content into sentences.
+    ///   - hardBreakDetectors: Detectors used to identify standalone display
+    ///     text (part headings, title pages) which must never be merged into
+    ///     a surrounding sentence.
     public init(
         publication: Weak<Publication>,
         resourceContentIteratorFactories: [ResourceContentIteratorFactory],
-        pageArtifactDetectors: [PageArtifactDetector] = [PageNumberArtifactDetector(), RunningHeaderArtifactDetector()]
+        pageArtifactDetectors: [PageArtifactDetector] = [PageNumberArtifactDetector(), RunningHeaderArtifactDetector()],
+        hardBreakDetectors: [HardBreakDetector] = [SpacedCapsHardBreakDetector(), HeadingHardBreakDetector(), StandalonePageHardBreakDetector()]
     ) {
         self.publication = publication
         self.resourceContentIteratorFactories = resourceContentIteratorFactories
         self.pageArtifactDetectors = pageArtifactDetectors
+        self.hardBreakDetectors = hardBreakDetectors
     }
 
     public static func makeFactory(
         resourceContentIteratorFactories: [ResourceContentIteratorFactory],
-        pageArtifactDetectors: [PageArtifactDetector] = [PageNumberArtifactDetector(), RunningHeaderArtifactDetector()]
+        pageArtifactDetectors: [PageArtifactDetector] = [PageNumberArtifactDetector(), RunningHeaderArtifactDetector()],
+        hardBreakDetectors: [HardBreakDetector] = [SpacedCapsHardBreakDetector(), HeadingHardBreakDetector(), StandalonePageHardBreakDetector()]
     ) -> (PublicationServiceContext) -> DefaultContentService? {
         { context in
             DefaultContentService(
                 publication: context.publication,
                 resourceContentIteratorFactories: resourceContentIteratorFactories,
-                pageArtifactDetectors: pageArtifactDetectors
+                pageArtifactDetectors: pageArtifactDetectors,
+                hardBreakDetectors: hardBreakDetectors
             )
         }
     }
@@ -61,7 +69,8 @@ public final class DefaultContentService: ContentService, Sendable {
             publication: pub,
             start: start,
             resourceContentIteratorFactories: resourceContentIteratorFactories,
-            pageArtifactDetectors: pageArtifactDetectors
+            pageArtifactDetectors: pageArtifactDetectors,
+            hardBreakDetectors: hardBreakDetectors
         )
     }
 
@@ -70,17 +79,20 @@ public final class DefaultContentService: ContentService, Sendable {
         let start: Locator?
         let resourceContentIteratorFactories: [ResourceContentIteratorFactory]
         let pageArtifactDetectors: [PageArtifactDetector]
+        let hardBreakDetectors: [HardBreakDetector]
 
         init(
             publication: Publication,
             start: Locator?,
             resourceContentIteratorFactories: [ResourceContentIteratorFactory],
-            pageArtifactDetectors: [PageArtifactDetector]
+            pageArtifactDetectors: [PageArtifactDetector],
+            hardBreakDetectors: [HardBreakDetector]
         ) {
             self.publication = publication
             self.start = start
             self.resourceContentIteratorFactories = resourceContentIteratorFactories
             self.pageArtifactDetectors = pageArtifactDetectors
+            self.hardBreakDetectors = hardBreakDetectors
         }
 
         func iterator() -> ContentIterator {
@@ -91,7 +103,8 @@ public final class DefaultContentService: ContentService, Sendable {
             )
 
             // Fixed-layout content is paginated by construction, cutting
-            // sentences between pages; stitch them back together.
+            // sentences between printed lines, block elements and pages;
+            // re-segment it so that each element holds one full sentence.
             //
             // Known limitation: this checks the publication-wide layout, so
             // per-spine-item `rendition:layout` overrides in mixed EPUBs are
@@ -100,10 +113,11 @@ public final class DefaultContentService: ContentService, Sendable {
                 return iterator
             }
 
-            return SentenceStitchingContentIterator(
+            return SentenceContentIterator(
                 iterator: iterator,
                 language: publication.metadata.language,
-                artifactDetectors: pageArtifactDetectors
+                artifactDetectors: pageArtifactDetectors,
+                hardBreakDetectors: hardBreakDetectors
             )
         }
     }

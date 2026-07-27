@@ -93,6 +93,21 @@ actor BufferedContentIterator {
         return try await element(at: (lastIndex ?? 0) - offset)
     }
 
+    /// Returns the element at the given absolute virtual `coordinate` (the
+    /// first element pulled forward is coordinate 0), re-centering the buffer
+    /// around it.
+    ///
+    /// This is an absolute-addressing alternative to the `next()`/
+    /// `previous()` cursor API; the two styles should not be mixed on the
+    /// same instance.
+    func element(atCoordinate coordinate: Int) async throws -> ContentElement? {
+        guard let element = try await element(at: coordinate) else {
+            return nil
+        }
+        lastIndex = coordinate
+        return element
+    }
+
     // MARK: - Buffer management
 
     /// Returns the element at the given virtual `coordinate`, extending the

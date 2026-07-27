@@ -66,8 +66,8 @@ final class TTSViewModel: ObservableObject, Loggable {
         synthesizer.delegate = self
 
         // Highlight the currently spoken utterance, with one decoration per
-        // part: a sentence stitched across a fixed-layout page boundary keeps
-        // its highlight on both pages.
+        // part: a fixed-layout sentence spanning several lines or pages keeps
+        // a highlight on each of them.
         if let navigator = navigator as? DecorableNavigator {
             $playingUtteranceParts
                 .removeDuplicates()

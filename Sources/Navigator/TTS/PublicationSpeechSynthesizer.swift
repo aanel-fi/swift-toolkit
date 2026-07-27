@@ -57,8 +57,8 @@ public final class PublicationSpeechSynthesizer: Loggable {
     public struct Utterance: Equatable, Sendable {
         /// A portion of the utterance with its own locator.
         ///
-        /// A sentence stitched across a fixed-layout page boundary has one
-        /// part per page; a regular utterance has a single part.
+        /// A fixed-layout sentence has one part per printed line or block
+        /// element it touches; a regular utterance has a single part.
         public struct Part: Equatable, Sendable {
             /// Text spoken for this part.
             public let text: String

@@ -54,7 +54,7 @@ When pairing the `PublicationSpeechSynthesizer` with a `Navigator`, you can use 
 
 ## Fixed-layout publications
 
-With fixed-layout publications (PDF, EPUB FXL), the synthesizer speaks a sentence spanning two pages as a single utterance, and skips page-boundary noise such as page numbers and running headers. See [the Content guide](Content.md) for how the underlying stitching works.
+With fixed-layout publications (PDF, EPUB FXL), the synthesizer speaks each full sentence as a single utterance — even when it spans printed lines, block elements or page boundaries — and skips page-boundary noise such as page numbers and running headers. See [the Content guide](Content.md) for how the underlying sentence re-segmentation works.
 
 A cross-page utterance is composed of several `parts`, each with a locator targeting its own page. Regular utterances have a single part, so you can treat every utterance uniformly:
 
