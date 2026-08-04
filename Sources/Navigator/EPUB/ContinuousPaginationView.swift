@@ -240,6 +240,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                case let .locator(locator) = location,
                locator.locations.progression == nil,
                currentIndex == index {
+                NSLog("[AanelNav] stay-put: unresolved anchor")
                 return true
             }
             let localOffset = resolved
