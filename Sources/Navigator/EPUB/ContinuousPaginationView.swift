@@ -261,6 +261,17 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 break
             }
 
+            // aanel-deadband: don't chase locator targets already inside the
+            // comfortable reading band — a follow that would move the surface
+            // <15% of the viewport keeps it still (sentence follows advance in
+            // small steps; the view recentres only once the highlight has
+            // walked far enough, and a listen-here tap on a visible sentence
+            // no longer nudges the page).
+            if pass == 0, case .locator = location,
+               abs(scrollView.contentOffset.y - targetY) < scrollView.bounds.height * 0.15 {
+                return true
+            }
+
             await setContentOffset(CGPoint(x: 0, y: targetY), animated: animated)
 
             if aanelUserInterrupted {
