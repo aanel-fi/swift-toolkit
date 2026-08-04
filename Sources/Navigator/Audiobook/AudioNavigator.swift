@@ -196,13 +196,22 @@ public final class AudioNavigator: Navigator, Configurable, AudioSessionUser, Lo
         }
     }
 
+    // aanel: the last explicitly navigated location. play()'s cold-start
+    // fallback must prefer this over the session-start initialLocation —
+    // after an explicit go(to:), initialLocation is stale, and re-arming
+    // play() while the target asset was still loading (or after its load
+    // failed) yanked playback back to the saved resume position (the
+    // AAN-56 "audio jumps to the MMKV resume" race). Retrying the intended
+    // target is always the right recovery.
+    private var aanelLastNavigatedLocation: Locator?
+
     /// Resumes or start the playback.
     public func play() {
         playTask = Task { @MainActor in
             AudioSession.shared.start(with: self, isPlaying: false)
 
             if player.currentItem == nil {
-                if let location = initialLocation {
+                if let location = aanelLastNavigatedLocation ?? initialLocation {
                     await go(to: location)
                 } else if let link = publication.readingOrder.first {
                     await go(to: link)
@@ -427,6 +436,7 @@ public final class AudioNavigator: Navigator, Configurable, AudioSessionUser, Lo
         guard let newResourceIndex = publication.readingOrder.firstIndexWithHREF(locator.href) else {
             return false
         }
+        aanelLastNavigatedLocation = locator
         let link = publication.readingOrder[newResourceIndex]
 
         do {

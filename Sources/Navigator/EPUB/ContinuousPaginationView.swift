@@ -628,16 +628,19 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
         guard let view = loadedViews.values.first(where: {
             $0.frame.minY <= point.y && point.y < $0.frame.maxY
         }), let spreadView = view as? EPUBReflowableSpreadView else {
+            NSLog("[AanelProbe] idx=%d frac=%.2f y=%.0f NO SPREAD", index, isLast ? 0 : fractions[index], y)
             if isLast { return }
             aanelProbe(noteName: noteName, fractions: fractions, index: index + 1)
             return
         }
 
+        let spreadIdx = spreadView.spread.readingOrderIndices.lowerBound
         spreadView.aanelEmitCentreLocator(
             atLocalPoint: CGPoint(x: point.x, y: point.y - view.frame.minY),
             noteName: noteName,
             force: isLast
         ) { [weak self] emitted in
+            NSLog("[AanelProbe] idx=%d frac=%.2f spread=%d localY=%.0f emitted=%d last=%d", index, isLast ? 0 : fractions[index], spreadIdx, point.y - view.frame.minY, emitted ? 1 : 0, isLast ? 1 : 0)
             guard !emitted, !isLast else { return }
             self?.aanelProbe(noteName: noteName, fractions: fractions, index: index + 1)
         }
