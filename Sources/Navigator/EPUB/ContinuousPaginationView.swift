@@ -170,6 +170,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         currentIndex = index
         scrollView.contentOffset = CGPoint(x: 0, y: yOffset(before: index))
+        NSLog("[AanelState] reload idx=%d offset=%.0f contentSize=%.0f pages=%d est=%.0f", index, scrollView.contentOffset.y, scrollView.contentSize.height, pageCount, estimatedPageHeight)
 
         setCurrentIndex(index)
 
@@ -306,6 +307,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
         updateCurrentIndexFromViewport()
         delegate?.paginationViewDidUpdateViews(self)
+        NSLog("[AanelState] goToIndex done idx=%d offset=%.0f contentSize=%.0f base=%.0f", index, scrollView.contentOffset.y, scrollView.contentSize.height, yOffset(before: index))
         return true
     }
 
