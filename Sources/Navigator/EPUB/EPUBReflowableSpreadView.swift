@@ -262,11 +262,10 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
               return null;
             }
 
-            var rects = range.getClientRects();
-            if (rects && rects.length > 0) {
-              return rects[0];
-            }
-
+            // aanel: the union box, not getClientRects()[0] — the first-line
+            // fragment reports ~one line of height, which collapsed the
+            // sentence-mass centring for multi-line sentences (top is the
+            // same in both).
             return range.getBoundingClientRect();
           }
 
