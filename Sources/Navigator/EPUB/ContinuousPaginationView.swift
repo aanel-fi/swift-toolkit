@@ -227,20 +227,32 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         for pass in 0 ..< 3 {
             let baseOffset = yOffset(before: index)
             let pageHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
+            let nearY: CGFloat? = {
+                guard case .locator = location else { return nil }
+                let local = scrollView.contentOffset.y + scrollView.bounds.height * 0.45 - yOffset(before: index)
+                let pageHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
+                // Only meaningful when the viewport actually overlaps the
+                // target spread — a cross-chapter jump has no proximity prior.
+                guard local >= -scrollView.bounds.height, local <= pageHeight + scrollView.bounds.height else { return nil }
+                return local
+            }()
             let resolved = isReady
-                ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height)
+                ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height, nearY: nearY)
                 : nil
             // aanel: a READY page whose text anchor cannot be resolved
-            // (markup-heavy sentences — multi-line word art, nested spans —
-            // defeat the text walker) and which carries no progression has no
-            // meaningful destination. STAY PUT rather than yank to the chapter
-            // start: for read-along follows the correct sentence is typically
-            // already in the viewport.
-            if resolved == nil, isReady, pass == 0,
+            // (markup-heavy sentences defeat the text walker) and which
+            // carries no progression has no meaningful destination — NEVER
+            // synthesize a chapter-start landing from `progression nil → 0`.
+            // Pass 0: stay put entirely (for read-along follows the sentence
+            // is typically already in the viewport). Later passes: keep the
+            // pass-0 landing (this was the dominant "jumps to the beginning
+            // of the chapter" — an interrupted animation re-resolved, the
+            // anchor raced to nil, and the default sent us to offset 0).
+            if resolved == nil, isReady,
                case let .locator(locator) = location,
                locator.locations.progression == nil,
                currentIndex == index {
-                NSLog("[AanelNav] stay-put: unresolved anchor")
+                NSLog("[AanelNav] stay-put: unresolved anchor pass=%d", pass)
                 return true
             }
             let localOffset = resolved
@@ -448,14 +460,14 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         layoutIfNeeded()
     }
 
-    private func targetYOffset(at index: Int, location: PageLocation, viewportHeight: CGFloat) async -> CGFloat? {
+    private func targetYOffset(at index: Int, location: PageLocation, viewportHeight: CGFloat, nearY: CGFloat?) async -> CGFloat? {
         guard let view = loadedViews[index] as? (UIView & ContinuousPageView) else {
             return nil
         }
-        return await view.targetYOffset(for: location, viewportHeight: viewportHeight)
+        return await view.targetYOffset(for: location, viewportHeight: viewportHeight, nearY: nearY)
     }
 
-    private func resolvedTargetYOffset(at index: Int, location: PageLocation, viewportHeight: CGFloat) async -> CGFloat? {
+    private func resolvedTargetYOffset(at index: Int, location: PageLocation, viewportHeight: CGFloat, nearY: CGFloat?) async -> CGFloat? {
         let attemptCount: Int = {
             guard case let .locator(locator) = location else {
                 return 1
@@ -464,7 +476,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }()
 
         for attempt in 0 ..< attemptCount {
-            if let offset = await targetYOffset(at: index, location: location, viewportHeight: viewportHeight), offset.isFinite {
+            if let offset = await targetYOffset(at: index, location: location, viewportHeight: viewportHeight, nearY: nearY), offset.isFinite {
                 return offset
             }
 

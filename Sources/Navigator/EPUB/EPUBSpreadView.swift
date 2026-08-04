@@ -504,7 +504,7 @@ class EPUBSpreadView: UIView, Loggable, ContinuousPageView {
         max(bounds.height, 1)
     }
 
-    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat) async -> CGFloat? {
+    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat, nearY: CGFloat?) async -> CGFloat? {
         nil
     }
 

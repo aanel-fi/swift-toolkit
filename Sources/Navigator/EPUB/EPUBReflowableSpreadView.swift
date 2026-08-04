@@ -85,7 +85,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             };
           }
 
-          function rangeForTextNormalized(searchRoot, target, before, after) {
+          function rangeForTextNormalized(searchRoot, target, before, after, nearY) {
             var walker = document.createTreeWalker(searchRoot, NodeFilter.SHOW_TEXT, null);
             var nodes = [];
             var total = 0;
@@ -128,14 +128,34 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             if (!h) { return null; }
             var b = normStr(before);
             var a = normStr(after);
+            function occTop(occIdx) {
+              var rawIdx = map[occIdx];
+              for (var q = 0; q < nodes.length; q += 1) {
+                if (rawIdx < nodes[q].start + nodes[q].raw.length) {
+                  var rr = document.createRange();
+                  rr.selectNodeContents(nodes[q].node);
+                  var rect = rectFromRange(rr);
+                  var body = (document.body || document.documentElement).getBoundingClientRect();
+                  return rect ? rect.top - body.top : 0;
+                }
+              }
+              return 0;
+            }
+            var useNear = typeof nearY === "number";
             var best = -1;
             var bestScore = -1;
+            var bestDist = Infinity;
             var idx = norm.indexOf(h);
             while (idx >= 0) {
               var score = 0;
               if (b && norm.slice(Math.max(0, idx - b.length - 2), idx).indexOf(b) >= 0) { score += 1; }
               if (a && norm.slice(idx + h.length, idx + h.length + a.length + 2).indexOf(a) >= 0) { score += 1; }
-              if (score > bestScore) { bestScore = score; best = idx; }
+              var dist = useNear ? Math.abs(occTop(idx) - nearY) : 0;
+              if (score > bestScore || (score === bestScore && useNear && dist < bestDist)) {
+                bestScore = score;
+                bestDist = dist;
+                best = idx;
+              }
               idx = norm.indexOf(h, idx + 1);
             }
             if (best < 0) { return null; }
@@ -159,7 +179,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             return range;
           }
 
-          function rangeForText(root, highlight, before, after) {
+          function rangeForText(root, highlight, before, after, nearY) {
             var target = String(highlight || "").trim();
             if (!target) {
               return null;
@@ -190,7 +210,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
               // typographic spaces, soft hyphens split or alter the text
               // nodes) — fall back to a normalized cross-node search so the
               // follow resolves everything the decoration engine can.
-              return rangeForTextNormalized(searchRoot, target, before, after);
+              return rangeForTextNormalized(searchRoot, target, before, after, nearY);
             }
 
             function score(match) {
@@ -204,13 +224,30 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
               return points;
             }
 
+            // aanel: repeated phrases used to resolve to the FIRST occurrence
+            // in the document on score ties, teleporting follows to identical
+            // sentences pages away. With a nearY hint (the current reading
+            // position), equal-scoring candidates prefer the nearest one.
+            var docTop = documentTopOffset();
+            function matchTop(m) {
+              var r = document.createRange();
+              r.setStart(m.node, m.index);
+              r.setEnd(m.node, Math.min(m.index + target.length, (m.node.textContent || "").length));
+              var rect = rectFromRange(r);
+              return rect ? rect.top - docTop : 0;
+            }
+            var useNear = typeof nearY === "number" && matches.length > 1;
             var best = matches[0];
             var bestScore = score(best);
+            var bestDist = useNear ? Math.abs(matchTop(best) - nearY) : 0;
             for (var i = 1; i < matches.length; i += 1) {
               var candidateScore = score(matches[i]);
-              if (candidateScore > bestScore) {
+              if (candidateScore < bestScore) { continue; }
+              var dist = useNear ? Math.abs(matchTop(matches[i]) - nearY) : 0;
+              if (candidateScore > bestScore || (useNear && dist < bestDist)) {
                 best = matches[i];
                 bestScore = candidateScore;
+                bestDist = dist;
               }
             }
 
@@ -328,7 +365,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             return null;
           }
 
-          function rectFromLocator(locator) {
+          function rectFromLocator(locator, nearY) {
             try {
               var locations = locator && locator.locations ? locator.locations : {};
               var text = locator && locator.text ? locator.text : {};
@@ -363,7 +400,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
               }
 
               if (text && text.highlight) {
-                return rectFromRange(rangeForText(root, text.highlight, text.before, text.after));
+                return rectFromRange(rangeForText(root, text.highlight, text.before, text.after, nearY));
               }
             } catch (_) {}
 
@@ -432,8 +469,8 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
               var rect = rectFromLocator(locator);
               return rect ? makeRectJSON(rect) : null;
             },
-            locatorYOffset: function (locator) {
-              var rect = rectFromLocator(locator);
+            locatorYOffset: function (locator, nearY) {
+              var rect = rectFromLocator(locator, nearY);
               if (!rect) {
                 return null;
               }
@@ -906,9 +943,9 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         return max(aanelContinuousInsets.top + documentHeight + aanelContinuousInsets.bottom, 1)
     }
 
-    override func targetYOffset(for location: PageLocation, viewportHeight: CGFloat) async -> CGFloat? {
+    override func targetYOffset(for location: PageLocation, viewportHeight: CGFloat, nearY: CGFloat?) async -> CGFloat? {
         guard isContinuousScrolling else {
-            return await super.targetYOffset(for: location, viewportHeight: viewportHeight)
+            return await super.targetYOffset(for: location, viewportHeight: viewportHeight, nearY: nearY)
         }
 
         let pageHeight = preferredHeight(for: bounds.width)
@@ -921,7 +958,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             return maxOffset
         case let .locator(locator):
             for attempt in 0 ..< 6 {
-                if let offset = await locatorYOffset(for: locator) {
+                if let offset = await locatorYOffset(for: locator, nearY: nearY.map { $0 - aanelContinuousInsets.top }) {
                     return min(max(aanelContinuousInsets.top + offset, 0), maxOffset)
                 }
 
@@ -1010,12 +1047,13 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         onPreferredHeightChange?()
     }
 
-    private func locatorYOffset(for locator: Locator) async -> CGFloat? {
+    private func locatorYOffset(for locator: Locator, nearY: CGFloat?) async -> CGFloat? {
         guard let locatorJSON = try? locator.jsonString() else {
             return nil
         }
 
-        let result = await evaluateScript("readiumContinuous.locatorYOffset(\(locatorJSON));")
+        let nearArg = nearY.map { String(format: "%.0f", $0) } ?? "null"
+        let result = await evaluateScript("readiumContinuous.locatorYOffset(\(locatorJSON), \(nearArg));")
         guard
             case let .success(value) = result,
             let number = value as? NSNumber
