@@ -251,6 +251,12 @@ public final class AudioNavigator: Navigator, Configurable, AudioSessionUser, Lo
 
     private lazy var mediaLoader = PublicationMediaLoader(publication: publication)
 
+    // aanel-avplayer-accessor-begin
+    /// aanel: read-only access to the underlying AVPlayer so the app layer
+    /// can bind an MPNowPlayingSession and disable iOS's automatic Now
+    /// Playing publishing (see AudioViewController).
+    public var aanelAVPlayer: AVPlayer { player }
+    // aanel-avplayer-accessor-end
     private lazy var player: AVPlayer = {
         let player = AVPlayer()
         player.allowsExternalPlayback = false

@@ -31,6 +31,18 @@ final class PublicationMediaLoader: NSObject, AVAssetResourceLoaderDelegate, Log
     /// Creates a new `AVURLAsset` to serve the given `link`.
     func makeAsset(for link: Link) throws -> AVURLAsset {
         let originalURL = link.url(relativeTo: publication.baseURL)
+        // aanel-publication-media-loader-https-bypass-begin
+        // Workaround: when the publication is opened from a local manifest
+        // file but readingOrder contains absolute http(s) URLs (streaming
+        // audiobook case), publication.get(link) returns nil because the
+        // resource container is file-scoped. Hand plain http(s) URLs
+        // straight to AVPlayer which will fetch via NSURLSession. LCP
+        // audiobooks use file:// after license decryption and keep the
+        // delegate path so on-the-fly decryption still runs.
+        if let scheme = originalURL.url.scheme, scheme == "http" || scheme == "https" {
+            return AVURLAsset(url: originalURL.url)
+        }
+        // aanel-publication-media-loader-https-bypass-end
         guard var components = URLComponents(url: originalURL.url, resolvingAgainstBaseURL: true) else {
             throw AssetError.invalidHREF(link.href)
         }

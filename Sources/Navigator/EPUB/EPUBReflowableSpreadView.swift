@@ -595,6 +595,19 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         if let linkJSON = try? link.jsonString() {
             await evaluateScript("readium.link = \(linkJSON);")
         }
+        // aanel-bodypad-begin: scroll-mode body padding so chapter
+        // start/end clears the chrome edge-fade overlays.
+        if viewModel.scroll {
+            await evaluateScript("(function(){if(!document.body)return;document.body.style.setProperty(\"padding-top\",\"80px\",\"important\");document.body.style.setProperty(\"padding-bottom\",\"95px\",\"important\");})()")
+        }
+        // aanel-bodypad-end
+        // aanel-divider-begin: scroll-mode full-bleed chapter hairline,
+        // suppressed on the last resource (no trailing line at book end).
+        if viewModel.scroll,
+           spread.readingOrderIndices.upperBound < viewModel.readingOrder.count - 1 {
+            await evaluateScript("(function(){if(!document.body)return;if(document.getElementById(\"aanel-divider-style\"))return;var s=document.createElement(\"style\");s.id=\"aanel-divider-style\";s.textContent=\"body::after{content:\\\"\\\";display:block;position:relative;left:50%;transform:translateX(-50%);width:100vw;height:1px;background:#CAD5DF;margin:48px 0 8px 0;border:0;pointer-events:none;}\";document.head.appendChild(s);})()")
+        }
+        // aanel-divider-end
 
         try? await Task.sleep(seconds: 0.2)
 
