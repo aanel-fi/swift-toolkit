@@ -273,7 +273,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // aanel: locator centring lives in the spread's targetYOffset
             // (sentence mass at 50% viewport); resolved offsets arrive final.
             let targetY = clampYOffset(baseOffset + localOffset)
-            NSLog("[AanelNav] pass=%d cur=%.0f target=%.0f local=%.0f", pass, scrollView.contentOffset.y, targetY, localOffset)
 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
                 break
