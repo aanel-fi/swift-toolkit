@@ -590,6 +590,49 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         return first ... last
     }
 
+    // aanel-settle-continuous-begin
+    /// aanel: centre-locator emitter for continuous scroll mode. The OUTER
+    /// ContinuousPaginationView owns the scrolling surface and calls this on
+    /// the spread under the viewport centre; `point` is in this view's
+    /// coordinate space. Hit-tests the webview for the sentence snippet at the
+    /// centre and posts a serialized Locator on `noteName`
+    /// (AanelRulla.scrollMove / .scrollSettle) — the same contract the
+    /// per-spread emitter used before continuous scroll, so EPUBViewController
+    /// and the JS selection-action bridge stay unchanged.
+    func aanelEmitCentreLocator(atLocalPoint point: CGPoint, noteName: String) {
+        let insetTop = contentInsets.top
+        let docHeight = measuredDocumentHeight ?? estimatedDocumentHeight
+        guard docHeight > 0 else { return }
+        let progression = max(0.0, min(1.0, (point.y - insetTop) / docHeight))
+        guard let link = viewModel.readingOrder.getOrNil(spread.leading) else { return }
+        var locations = Locator.Locations()
+        locations.progression = progression
+        let capturedLocations = locations
+        // The webview is pinned at contentInsets.top with its own scroll
+        // offset fixed at zero in continuous mode, so webview-local CSS px ==
+        // spread-local points minus the top inset.
+        let cx = Int(point.x)
+        let cy = Int(max(0, point.y - insetTop))
+        let hitTestJS = "(function(){var cx=\(cx),cy=\(cy);var r=document.caretRangeFromPoint?document.caretRangeFromPoint(cx,cy):null;var n=r&&r.startContainer;if(n&&n.nodeType===3){var t=n.textContent||'';var o=r.startOffset||0;return t.substring(Math.max(0,o-30),o+80);}var el=document.elementFromPoint(cx,cy);return el?(el.textContent||'').substring(0,140):'';})()"
+        webView.evaluateJavaScript(hitTestJS) { result, _ in
+            let snippet = (result as? String) ?? ""
+            let locator = Locator(
+                href: link.url(),
+                mediaType: link.mediaType ?? .xhtml,
+                locations: capturedLocations,
+                text: Locator.Text(highlight: snippet)
+            )
+            guard let locatorJSON = try? locator.jsonString() else { return }
+            NSLog("[AanelSettle] posted %@ prog=%.3f snippet=%d", noteName, progression, snippet.count)
+            NotificationCenter.default.post(
+                name: Notification.Name(noteName),
+                object: nil,
+                userInfo: ["locatorJSON": locatorJSON]
+            )
+        }
+    }
+    // aanel-settle-continuous-end
+
     override func spreadDidLoad() async {
         let link = spread.first.link
         if let linkJSON = try? link.jsonString() {
