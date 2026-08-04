@@ -139,7 +139,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     ) {
         precondition(pageCount >= 1)
         precondition(0 ..< pageCount ~= index)
-        NSLog("[AanelDiag] reloadAtIndex %d navAfter=%d", index, navigateToLocationAfterReload ? 1 : 0)
 
         self.pageCount = pageCount
         pageHeights = Array(repeating: estimatedPageHeight, count: pageCount)
@@ -212,7 +211,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         // slightly-off landing beats a dead control.
         let isReady = await waitUntilViewIsLoaded(at: index, timeout: 8.0)
         synchronizeLayout()
-        NSLog("[AanelNav] goToIndex %d ready=%d loc=%@", index, isReady ? 1 : 0, String(describing: location))
 
         if !isReady {
             log(.warning, "Timed out waiting for continuous page \(index); landing on estimated offset for \(location)")
@@ -248,11 +246,9 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             let targetY = clampYOffset(baseOffset + adjustedLocalOffset)
 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
-                NSLog("[AanelNav] converge pass=%d stable at y=%.0f", pass, targetY)
                 break
             }
 
-            NSLog("[AanelNav] converge pass=%d cur=%.0f target=%.0f", pass, scrollView.contentOffset.y, targetY)
             await setContentOffset(CGPoint(x: 0, y: targetY), animated: animated)
 
             if aanelUserInterrupted {
@@ -372,7 +368,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         let pageMinY = yOffset(before: index)
         let viewportMinY = viewportRect.minY
-        NSLog("[AanelDiag] pageHeight[%d] %.0f -> %.0f (viewport=%.0f)", index, oldHeight, newHeight, viewportMinY)
         pageHeights[index] = newHeight
 
         if pageMinY < viewportMinY {
@@ -383,7 +378,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // goToIndex hangs on its continuation and the navigator is stuck
             // in .jumping, silently rejecting every later navigation. The
             // convergence loop in goToIndex re-targets after the interrupt.
-            if scrollAnimationContinuation != nil { NSLog("[AanelNav] height-compensation interrupted animation (delta=%.0f)", newHeight - oldHeight) }
             scrollAnimationContinuation?.resume()
             scrollAnimationContinuation = nil
             scrollView.contentOffset.y += newHeight - oldHeight
@@ -494,7 +488,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
 
         isAdjustingContentOffset = true
-        NSLog("[AanelDiag] clamp %.0f -> %.0f", scrollView.contentOffset.y, clamped)
         scrollView.contentOffset.y = clamped
         isAdjustingContentOffset = false
     }
@@ -625,7 +618,6 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
     // convergence loop yields to the user.
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         if scrollAnimationContinuation != nil {
-            NSLog("[AanelNav] user touch interrupted animation")
             aanelUserInterrupted = true
             scrollAnimationContinuation?.resume()
             scrollAnimationContinuation = nil
