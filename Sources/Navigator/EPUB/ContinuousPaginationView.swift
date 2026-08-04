@@ -139,6 +139,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     ) {
         precondition(pageCount >= 1)
         precondition(0 ..< pageCount ~= index)
+        NSLog("[AanelDiag] reloadAtIndex %d navAfter=%d", index, navigateToLocationAfterReload ? 1 : 0)
 
         self.pageCount = pageCount
         pageHeights = Array(repeating: estimatedPageHeight, count: pageCount)
@@ -371,6 +372,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         let pageMinY = yOffset(before: index)
         let viewportMinY = viewportRect.minY
+        NSLog("[AanelDiag] pageHeight[%d] %.0f -> %.0f (viewport=%.0f)", index, oldHeight, newHeight, viewportMinY)
         pageHeights[index] = newHeight
 
         if pageMinY < viewportMinY {
@@ -485,6 +487,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
 
         isAdjustingContentOffset = true
+        NSLog("[AanelDiag] clamp %.0f -> %.0f", scrollView.contentOffset.y, clamped)
         scrollView.contentOffset.y = clamped
         isAdjustingContentOffset = false
     }
