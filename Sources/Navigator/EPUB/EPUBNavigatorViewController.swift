@@ -818,7 +818,6 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     }
 
     public func go(to locator: Locator, options: NavigatorGoOptions) async -> Bool {
-        NSLog("[AanelGo] go(to:) href=%@ prog=%@ totalProg=%@ text=%d", locator.href.string, locator.locations.progression.map { String(format: "%.3f", $0) } ?? "nil", locator.locations.totalProgression.map { String(format: "%.3f", $0) } ?? "nil", locator.text.highlight != nil ? 1 : 0)
         let locator = publication.normalizeLocator(locator)
 
         guard
