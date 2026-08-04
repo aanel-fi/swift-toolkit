@@ -612,8 +612,12 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
     // live marker is approximate by design.
     private func aanelEmitCentreLocator(noteName: String) {
         let isSettle = noteName.hasSuffix("scrollSettle")
+        // Fine rings near the centre; DOWNWARD (reading-direction) first on
+        // each ring so a chapter-START seam resolves to the new chapter's
+        // first sentences rather than the previous chapter's tail. Mid-chapter
+        // the centre probe hits immediately and the order is moot.
         let fractions: [CGFloat] = isSettle
-            ? [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32, 0.32]
+            ? [0, 0.04, -0.04, 0.08, -0.08, 0.12, -0.12, 0.18, -0.18, 0.26, -0.26, 0.34, -0.34]
             : [0]
         aanelProbe(noteName: noteName, fractions: fractions, index: 0)
     }
