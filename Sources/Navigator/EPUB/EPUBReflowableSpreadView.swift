@@ -104,9 +104,9 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             var lastSpace = true;
             for (var j = 0; j < full.length; j += 1) {
               var ch = full[j];
-              if (ch === "\u00AD") { continue; }
-              if (/[\u2010-\u2015\u2212]/.test(ch)) { ch = "-"; }
-              if (/\s/.test(ch)) {
+              if (ch === "\\u00AD") { continue; }
+              if (/[\\u2010-\\u2015\\u2212]/.test(ch)) { ch = "-"; }
+              if (/\\s/.test(ch)) {
                 if (lastSpace) { continue; }
                 norm += " ";
                 map.push(j);
@@ -119,9 +119,9 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             }
             function normStr(s) {
               return String(s || "")
-                .replace(/\u00AD/g, "")
-                .replace(/[\u2010-\u2015\u2212]/g, "-")
-                .replace(/\s+/g, " ")
+                .replace(/\\u00AD/g, "")
+                .replace(/[\\u2010-\\u2015\\u2212]/g, "-")
+                .replace(/\\s+/g, " ")
                 .trim();
             }
             var h = normStr(target);
