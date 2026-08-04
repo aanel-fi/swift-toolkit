@@ -139,6 +139,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     ) {
         precondition(pageCount >= 1)
         precondition(0 ..< pageCount ~= index)
+        NSLog("[AanelNav] reloadAtIndex %d navAfter=%d", index, navigateToLocationAfterReload ? 1 : 0)
 
         self.pageCount = pageCount
         pageHeights = Array(repeating: estimatedPageHeight, count: pageCount)
@@ -211,6 +212,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         // slightly-off landing beats a dead control.
         let isReady = await waitUntilViewIsLoaded(at: index, timeout: 8.0)
         synchronizeLayout()
+        NSLog("[AanelNav] goToIndex %d ready=%d loc=%@", index, isReady ? 1 : 0, String(describing: location))
 
         if !isReady {
             log(.warning, "Timed out waiting for continuous page \(index); landing on estimated offset for \(location)")
@@ -246,9 +248,11 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             let targetY = clampYOffset(baseOffset + adjustedLocalOffset)
 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
+                NSLog("[AanelNav] converge pass=%d stable y=%.0f (base=%.0f local=%.0f adj=%.0f)", pass, targetY, baseOffset, localOffset, adjustedLocalOffset)
                 break
             }
 
+            NSLog("[AanelNav] converge pass=%d cur=%.0f -> target=%.0f (base=%.0f local=%.0f adj=%.0f)", pass, scrollView.contentOffset.y, targetY, baseOffset, localOffset, adjustedLocalOffset)
             await setContentOffset(CGPoint(x: 0, y: targetY), animated: animated)
 
             if aanelUserInterrupted {
