@@ -32,6 +32,17 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     }
 
     private var pageHeights: [CGFloat] = []
+
+    // aanel: reloadAtIndex can run BEFORE the first layout pass, seeding the
+    // whole array with a degenerate estimate (bounds height 0 → 1pt) that
+    // never self-corrects for spreads outside the preload window. Every far
+    // cross-chapter target then computes near y=0 — "the follow lands on the
+    // cover". Treat degenerate entries as unknown and re-estimate with the
+    // CURRENT viewport height.
+    private func pageHeight(at index: Int) -> CGFloat {
+        let stored = pageHeights.getOrNil(index) ?? 0
+        return stored > 1 ? stored : estimatedPageHeight
+    }
     private var loadingIndexQueue: [Int] = []
     private var onViewLoadedCallbacks: [Int: CompletionList] = [:]
     private var readyViewIndices: Set<Int> = []
@@ -101,7 +112,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         var y: CGFloat = 0
 
         for index in 0 ..< pageCount {
-            let height = pageHeights.getOrNil(index) ?? estimatedPageHeight
+            let height = pageHeight(at: index)
             if let view = loadedViews[index] {
                 view.frame = CGRect(x: 0, y: y, width: width, height: height)
             }
@@ -227,11 +238,11 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         aanelUserInterrupted = false
         for pass in 0 ..< 3 {
             let baseOffset = yOffset(before: index)
-            let pageHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
+            let pageHeight = self.pageHeight(at: index)
             let nearY: CGFloat? = {
                 guard case .locator = location else { return nil }
                 let local = scrollView.contentOffset.y + scrollView.bounds.height * 0.45 - yOffset(before: index)
-                let pageHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
+                let pageHeight = self.pageHeight(at: index)
                 // Only meaningful when the viewport actually overlaps the
                 // target spread — a cross-chapter jump has no proximity prior.
                 guard local >= -scrollView.bounds.height, local <= pageHeight + scrollView.bounds.height else { return nil }
@@ -392,7 +403,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             return
         }
 
-        let oldHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
+        let oldHeight = pageHeight(at: index)
         let newHeight: CGFloat = {
             guard let view = view as? (UIView & ContinuousPageView) else {
                 return oldHeight
@@ -536,7 +547,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     }
 
     private func yOffset(before index: Int) -> CGFloat {
-        pageHeights.prefix(index).reduce(0, +)
+        (0 ..< index).reduce(0) { $0 + pageHeight(at: $1) }
     }
 
     private func updateCurrentIndexFromViewport() {
@@ -548,7 +559,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         var accumulatedHeight: CGFloat = 0
 
         for index in 0 ..< pageCount {
-            accumulatedHeight += pageHeights.getOrNil(index) ?? estimatedPageHeight
+            accumulatedHeight += pageHeight(at: index)
             if offset < accumulatedHeight || index == pageCount - 1 {
                 guard currentIndex != index else {
                     return
