@@ -431,12 +431,9 @@ public final class AudioNavigator: Navigator, Configurable, AudioSessionUser, Lo
         let wasPlaying = (state == .playing)
         pause()
 
-        NSLog("[AanelAudio] go(to:) href=%@ time=%@", locator.href.string, String(describing: locator.locations.time?.begin))
         guard let newResourceIndex = publication.readingOrder.firstIndexWithHREF(locator.href) else {
-            NSLog("[AanelAudio] go(to:) NO INDEX for href=%@; readingOrder[0..2]=%@", locator.href.string, publication.readingOrder.prefix(3).map(\.href).joined(separator: " | "))
             return false
         }
-        NSLog("[AanelAudio] go(to:) resolved index=%d (current=%d) wasPlaying=%d", newResourceIndex, resourceIndex, wasPlaying ? 1 : 0)
         let link = publication.readingOrder[newResourceIndex]
 
         do {
