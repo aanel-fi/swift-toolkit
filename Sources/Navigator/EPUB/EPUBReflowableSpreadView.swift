@@ -604,7 +604,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         let docHeight = measuredDocumentHeight ?? estimatedDocumentHeight
         guard docHeight > 0 else { return }
         let progression = max(0.0, min(1.0, (point.y - insetTop) / docHeight))
-        guard let link = viewModel.readingOrder.getOrNil(spread.leading) else { return }
+        let link = spread.first.link
         var locations = Locator.Locations()
         locations.progression = progression
         let capturedLocations = locations
