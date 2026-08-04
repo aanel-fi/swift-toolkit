@@ -599,10 +599,25 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
     /// (AanelRulla.scrollMove / .scrollSettle) — the same contract the
     /// per-spread emitter used before continuous scroll, so EPUBViewController
     /// and the JS selection-action bridge stay unchanged.
-    func aanelEmitCentreLocator(atLocalPoint point: CGPoint, noteName: String) {
+    /// Strict probe: emits ONLY if the point hits a real text node (caret
+    /// hit-test) — no elementFromPoint fallback. In the inter-chapter gap
+    /// (padding/divider/heading margins) elementFromPoint returns `body`,
+    /// whose textContent head is the CHAPTER START — a misleading snippet that
+    /// made early-chapter sentences unpickable at chapter edges. The
+    /// completion reports whether an emission happened so the caller can fan
+    /// out to the next probe point.
+    func aanelEmitCentreLocator(
+        atLocalPoint point: CGPoint,
+        noteName: String,
+        force: Bool,
+        completion: @escaping (Bool) -> Void
+    ) {
         let insetTop = contentInsets.top
         let docHeight = measuredDocumentHeight ?? estimatedDocumentHeight
-        guard docHeight > 0 else { return }
+        guard docHeight > 0 else {
+            completion(false)
+            return
+        }
         let progression = max(0.0, min(1.0, (point.y - insetTop) / docHeight))
         let link = spread.first.link
         var locations = Locator.Locations()
@@ -613,21 +628,33 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         // spread-local points minus the top inset.
         let cx = Int(point.x)
         let cy = Int(max(0, point.y - insetTop))
-        let hitTestJS = "(function(){var cx=\(cx),cy=\(cy);var r=document.caretRangeFromPoint?document.caretRangeFromPoint(cx,cy):null;var n=r&&r.startContainer;if(n&&n.nodeType===3){var t=n.textContent||'';var o=r.startOffset||0;return t.substring(Math.max(0,o-30),o+80);}var el=document.elementFromPoint(cx,cy);return el?(el.textContent||'').substring(0,140):'';})()"
-        webView.evaluateJavaScript(hitTestJS) { result, _ in
-            let snippet = (result as? String) ?? ""
+        // Strict form: caret-on-text-node only, empty string otherwise. The
+        // forced (last-resort) form keeps the old elementFromPoint fallback.
+        let strictJS = "(function(){var r=document.caretRangeFromPoint?document.caretRangeFromPoint(\(cx),\(cy)):null;var n=r&&r.startContainer;if(n&&n.nodeType===3&&(n.textContent||'').trim()){var t=n.textContent||'';var o=r.startOffset||0;return t.substring(Math.max(0,o-30),o+80);}return '';})()"
+        let forcedJS = "(function(){var cx=\(cx),cy=\(cy);var r=document.caretRangeFromPoint?document.caretRangeFromPoint(cx,cy):null;var n=r&&r.startContainer;if(n&&n.nodeType===3){var t=n.textContent||'';var o=r.startOffset||0;return t.substring(Math.max(0,o-30),o+80);}var el=document.elementFromPoint(cx,cy);return el?(el.textContent||'').substring(0,140):'';})()"
+        webView.evaluateJavaScript(force ? forcedJS : strictJS) { result, _ in
+            let snippet = ((result as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard force || !snippet.isEmpty else {
+                completion(false)
+                return
+            }
             let locator = Locator(
                 href: link.url(),
                 mediaType: link.mediaType ?? .xhtml,
                 locations: capturedLocations,
                 text: Locator.Text(highlight: snippet)
             )
-            guard let locatorJSON = try? locator.jsonString() else { return }
+            guard let locatorJSON = try? locator.jsonString() else {
+                completion(false)
+                return
+            }
             NotificationCenter.default.post(
                 name: Notification.Name(noteName),
                 object: nil,
                 userInfo: ["locatorJSON": locatorJSON]
             )
+            completion(true)
         }
     }
     // aanel-settle-continuous-end

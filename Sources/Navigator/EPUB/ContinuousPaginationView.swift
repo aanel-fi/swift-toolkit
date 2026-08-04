@@ -593,21 +593,46 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
         }
     }
 
-    // aanel-settle-continuous: find the spread under the viewport centre and
-    // delegate the JS hit-test + Locator emission to it in its own coordinate
-    // space (spread frames live in this scroll view's content space).
+    // aanel-settle-continuous: probe fan-out. The viewport centre can sit in
+    // the inter-chapter gap (trailing/leading padding, divider, heading
+    // margins) where a hit-test finds no text — so for the authoritative
+    // SETTLE, probe the centre first and fan outward (±8/16/24/32% of the
+    // viewport), accepting the first strict text hit; probes map to whichever
+    // spread lies under them, so the fan crosses chapter boundaries naturally.
+    // The last probe (centre again) is forced so a settle is never silently
+    // dropped. Throttled MOVE events keep the cheap single forced probe — the
+    // live marker is approximate by design.
     private func aanelEmitCentreLocator(noteName: String) {
-        let centre = CGPoint(
-            x: scrollView.bounds.width / 2,
-            y: scrollView.contentOffset.y + scrollView.bounds.height / 2
-        )
+        let isSettle = noteName.hasSuffix("scrollSettle")
+        let fractions: [CGFloat] = isSettle
+            ? [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32, 0.32]
+            : [0]
+        aanelProbe(noteName: noteName, fractions: fractions, index: 0)
+    }
+
+    private func aanelProbe(noteName: String, fractions: [CGFloat], index: Int) {
+        let viewportHeight = scrollView.bounds.height
+        let centreY = scrollView.contentOffset.y + viewportHeight / 2
+        let isLast = index >= fractions.count
+        let y = isLast ? centreY : centreY + fractions[index] * viewportHeight
+        let point = CGPoint(x: scrollView.bounds.width / 2, y: y)
+
         guard let view = loadedViews.values.first(where: {
-            $0.frame.minY <= centre.y && centre.y < $0.frame.maxY
-        }), let spreadView = view as? EPUBReflowableSpreadView else { return }
+            $0.frame.minY <= point.y && point.y < $0.frame.maxY
+        }), let spreadView = view as? EPUBReflowableSpreadView else {
+            if isLast { return }
+            aanelProbe(noteName: noteName, fractions: fractions, index: index + 1)
+            return
+        }
+
         spreadView.aanelEmitCentreLocator(
-            atLocalPoint: CGPoint(x: centre.x, y: centre.y - view.frame.minY),
-            noteName: noteName
-        )
+            atLocalPoint: CGPoint(x: point.x, y: point.y - view.frame.minY),
+            noteName: noteName,
+            force: isLast
+        ) { [weak self] emitted in
+            guard !emitted, !isLast else { return }
+            self?.aanelProbe(noteName: noteName, fractions: fractions, index: index + 1)
+        }
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
