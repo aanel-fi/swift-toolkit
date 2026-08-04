@@ -649,6 +649,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     }
 
     private func _reloadSpreads() {
+        NSLog("[AanelDiag] _reloadSpreads from state=%@", String(describing: state))
         let locator = currentLocation
 
         guard
@@ -1016,6 +1017,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     }
 
     public func submitPreferences(_ preferences: EPUBPreferences) {
+        NSLog("[AanelDiag] submitPreferences")
         viewModel.submitPreferences(preferences)
         applySettings()
 
@@ -1344,6 +1346,7 @@ extension EPUBNavigatorViewController: EPUBSpreadViewDelegate {
     }
 
     func spreadViewDidTerminate() {
+        NSLog("[AanelDiag] spreadViewDidTerminate -> reload")
         reloadSpreads()
     }
 }
