@@ -48,6 +48,11 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     private var aanelLastMoveEmitAt: TimeInterval = 0
     // aanel-settle-continuous-end
 
+    // aanel: set when a user touch interrupts an in-flight programmatic
+    // scroll animation — goToIndex's convergence loop checks it to stop
+    // fighting the user.
+    private var aanelUserInterrupted = false
+
     var isScrollEnabled: Bool {
         didSet { scrollView.isScrollEnabled = isScrollEnabled }
     }
@@ -206,36 +211,53 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         // slightly-off landing beats a dead control.
         let isReady = await waitUntilViewIsLoaded(at: index, timeout: 8.0)
         synchronizeLayout()
+        NSLog("[AanelNav] goToIndex %d ready=%d loc=%@", index, isReady ? 1 : 0, String(describing: location))
 
         if !isReady {
             log(.warning, "Timed out waiting for continuous page \(index); landing on estimated offset for \(location)")
         }
 
-        let baseOffset = yOffset(before: index)
-        let pageHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
-        let localOffset = (
-            isReady
-                ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height)
-                : nil
-        ) ?? defaultTargetYOffset(for: location, pageHeight: pageHeight, viewportHeight: scrollView.bounds.height)
-        guard localOffset.isFinite else {
-            return false
-        }
-        // aanel-centre: land locator targets ~45% down the viewport (parity
-        // with the pre-continuous Rulla smooth-scroll centring) instead of at
-        // the viewport top edge under the chrome. .start/.end keep upstream
-        // semantics.
-        var adjustedLocalOffset = localOffset
-        if case .locator = location {
-            adjustedLocalOffset = max(0, localOffset - scrollView.bounds.height * 0.45)
-        }
-        let targetY = clampYOffset(baseOffset + adjustedLocalOffset)
+        // aanel-converge: freshly loaded neighbours can re-measure DURING the
+        // animated scroll; the compensation in updatePageHeight interrupts the
+        // animation (resuming the waiter), which would otherwise land us on a
+        // stale target. Re-resolve and re-animate until the landing is stable
+        // (heights settle after one or two passes), unless the user grabbed
+        // the surface mid-flight — never fight the user.
+        let animated = options.animated && !UIAccessibility.isReduceMotionEnabled
+        aanelUserInterrupted = false
+        for pass in 0 ..< 3 {
+            let baseOffset = yOffset(before: index)
+            let pageHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
+            let localOffset = (
+                isReady
+                    ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height)
+                    : nil
+            ) ?? defaultTargetYOffset(for: location, pageHeight: pageHeight, viewportHeight: scrollView.bounds.height)
+            guard localOffset.isFinite else {
+                return pass > 0
+            }
+            // aanel-centre: land locator targets ~45% down the viewport
+            // (parity with the pre-continuous Rulla smooth-scroll centring)
+            // instead of at the viewport top edge under the chrome.
+            // .start/.end keep upstream semantics.
+            var adjustedLocalOffset = localOffset
+            if case .locator = location {
+                adjustedLocalOffset = max(0, localOffset - scrollView.bounds.height * 0.45)
+            }
+            let targetY = clampYOffset(baseOffset + adjustedLocalOffset)
 
-        guard abs(scrollView.contentOffset.y - targetY) > 0.5 else {
-            return true
-        }
+            if abs(scrollView.contentOffset.y - targetY) <= 2 {
+                NSLog("[AanelNav] converge pass=%d stable at y=%.0f", pass, targetY)
+                break
+            }
 
-        await setContentOffset(CGPoint(x: 0, y: targetY), animated: options.animated && !UIAccessibility.isReduceMotionEnabled)
+            NSLog("[AanelNav] converge pass=%d cur=%.0f target=%.0f", pass, scrollView.contentOffset.y, targetY)
+            await setContentOffset(CGPoint(x: 0, y: targetY), animated: animated)
+
+            if aanelUserInterrupted {
+                break
+            }
+        }
         updateCurrentIndexFromViewport()
         delegate?.paginationViewDidUpdateViews(self)
         return true
@@ -353,6 +375,15 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         if pageMinY < viewportMinY {
             isAdjustingContentOffset = true
+            // aanel: a direct contentOffset write CANCELS an in-flight
+            // animated setContentOffset without ever firing
+            // scrollViewDidEndScrollingAnimation — resume the waiter first, or
+            // goToIndex hangs on its continuation and the navigator is stuck
+            // in .jumping, silently rejecting every later navigation. The
+            // convergence loop in goToIndex re-targets after the interrupt.
+            if scrollAnimationContinuation != nil { NSLog("[AanelNav] height-compensation interrupted animation (delta=%.0f)", newHeight - oldHeight) }
+            scrollAnimationContinuation?.resume()
+            scrollAnimationContinuation = nil
             scrollView.contentOffset.y += newHeight - oldHeight
             isAdjustingContentOffset = false
         }
@@ -575,5 +606,19 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         scrollAnimationContinuation?.resume()
         scrollAnimationContinuation = nil
+    }
+
+    // aanel: a user touch also cancels an in-flight animated setContentOffset
+    // without firing didEndScrollingAnimation — resume the waiter (so the
+    // pending goTo completes instead of leaking its continuation and jamming
+    // the navigator state machine) and flag the interruption so the
+    // convergence loop yields to the user.
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        if scrollAnimationContinuation != nil {
+            NSLog("[AanelNav] user touch interrupted animation")
+            aanelUserInterrupted = true
+            scrollAnimationContinuation?.resume()
+            scrollAnimationContinuation = nil
+        }
     }
 }
