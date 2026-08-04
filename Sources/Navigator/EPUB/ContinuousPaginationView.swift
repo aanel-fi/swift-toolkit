@@ -251,19 +251,22 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height, nearY: nearY)
                 : nil
             // aanel: a READY page whose text anchor cannot be resolved
-            // (markup-heavy sentences defeat the text walker) and which
+            // (markup-heavy sentences, transient layout races) and which
             // carries no progression has no meaningful destination — NEVER
             // synthesize a chapter-start landing from `progression nil → 0`.
-            // Pass 0: stay put entirely (for read-along follows the sentence
-            // is typically already in the viewport). Later passes: keep the
-            // pass-0 landing (this was the dominant "jumps to the beginning
-            // of the chapter" — an interrupted animation re-resolved, the
-            // anchor raced to nil, and the default sent us to offset 0).
+            // Same spread (or any later pass): hold position. Cross-spread
+            // first pass: report FAILURE so the caller's retry loop can
+            // re-attempt once the anchor resolves — currentIndex derives from
+            // the viewport TOP edge, so normal border-crossing reading makes
+            // currentIndex lag the active chapter and the old guard leaked a
+            // chapter-start jump exactly there.
             if resolved == nil, isReady,
                case let .locator(locator) = location,
-               locator.locations.progression == nil,
-               currentIndex == index {
-                return true
+               locator.locations.progression == nil {
+                if currentIndex == index || pass > 0 {
+                    return true
+                }
+                return false
             }
             let localOffset = resolved
                 ?? defaultTargetYOffset(for: location, pageHeight: pageHeight, viewportHeight: scrollView.bounds.height)
