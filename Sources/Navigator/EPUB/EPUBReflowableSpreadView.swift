@@ -647,7 +647,12 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         // Strict form: caret-on-text-node only, empty string otherwise. The
         // forced (last-resort) form keeps the old elementFromPoint fallback.
         let strictJS = "(function(){var r=document.caretRangeFromPoint?document.caretRangeFromPoint(\(cx),\(cy)):null;var n=r&&r.startContainer;if(n&&n.nodeType===3&&(n.textContent||'').trim()){var t=n.textContent||'';var o=r.startOffset||0;return t.substring(Math.max(0,o-30),o+80);}return '';})()"
-        let forcedJS = "(function(){var cx=\(cx),cy=\(cy);var r=document.caretRangeFromPoint?document.caretRangeFromPoint(cx,cy):null;var n=r&&r.startContainer;if(n&&n.nodeType===3){var t=n.textContent||'';var o=r.startOffset||0;return t.substring(Math.max(0,o-30),o+80);}var el=document.elementFromPoint(cx,cy);return el?(el.textContent||'').substring(0,140):'';})()"
+        // Forced form: still caret-only. The old elementFromPoint fallback
+        // returned `body` in the inter-chapter gap, whose textContent head is
+        // the CHAPTER-OPENING text — a misleading snippet that dragged the
+        // marker to the wrong chapter. An EMPTY snippet with the geometric
+        // progression lets the JS matcher fall back cleanly instead.
+        let forcedJS = strictJS
         webView.evaluateJavaScript(force ? forcedJS : strictJS) { result, _ in
             let snippet = ((result as? String) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
