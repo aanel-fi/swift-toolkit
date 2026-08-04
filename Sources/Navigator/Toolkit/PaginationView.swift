@@ -43,11 +43,11 @@ protocol ContinuousPageView: PageView {
 
     /// Returns the vertical offset to the given internal location when the
     /// page is embedded in a continuous vertical scroll container.
-    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat) async -> CGFloat?
+    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat, nearY: CGFloat?) async -> CGFloat?
 }
 
 extension ContinuousPageView {
-    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat) async -> CGFloat? {
+    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat, nearY: CGFloat?) async -> CGFloat? {
         nil
     }
 }
