@@ -499,11 +499,27 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         }
     }
 
+    // aanel: at INTERIOR chapter boundaries in continuous mode the content
+    // insets are pure dead gap — a document edge only needs chrome clearance
+    // when it is also an edge of the whole book. First spread keeps its top
+    // inset, last keeps its bottom; everything else is zero.
+    private var aanelContinuousInsets: UIEdgeInsets {
+        guard isContinuousScrolling else { return contentInsets }
+        let isFirst = spread.readingOrderIndices.lowerBound == 0
+        let isLast = spread.readingOrderIndices.upperBound >= viewModel.readingOrder.count - 1
+        return UIEdgeInsets(
+            top: isFirst ? contentInsets.top : 0,
+            left: 0,
+            bottom: isLast ? contentInsets.bottom : 0,
+            right: 0
+        )
+    }
+
     private func updateContentInset() {
         contentInsets = delegate?.spreadViewContentInset(self) ?? .zero
 
         if isContinuousScrolling {
-            topConstraint.constant = contentInsets.top
+            topConstraint.constant = aanelContinuousInsets.top
             bottomConstraint.isActive = false
             webViewHeightConstraint.isActive = true
             webViewHeightConstraint.constant = measuredDocumentHeight ?? estimatedDocumentHeight
@@ -612,7 +628,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         force: Bool,
         completion: @escaping (Bool) -> Void
     ) {
-        let insetTop = contentInsets.top
+        let insetTop = aanelContinuousInsets.top
         let docHeight = measuredDocumentHeight ?? estimatedDocumentHeight
         guard docHeight > 0 else {
             completion(false)
@@ -667,7 +683,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         // aanel-bodypad-begin: scroll-mode body padding so chapter
         // start/end clears the chrome edge-fade overlays.
         if viewModel.scroll {
-            await evaluateScript("(function(){if(!document.body)return;document.body.style.setProperty(\"padding-top\",\"80px\",\"important\");document.body.style.setProperty(\"padding-bottom\",\"95px\",\"important\");})()")
+            await evaluateScript("(function(){if(!document.body)return;document.body.style.setProperty(\"padding-top\",\"32px\",\"important\");document.body.style.setProperty(\"padding-bottom\",\"32px\",\"important\");})()")
         }
         // aanel-bodypad-end
         // aanel-divider-begin: scroll-mode full-bleed chapter hairline,
@@ -804,7 +820,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             return super.preferredHeight(for: width)
         }
         let documentHeight = measuredDocumentHeight ?? estimatedDocumentHeight
-        return max(contentInsets.top + documentHeight + contentInsets.bottom, 1)
+        return max(aanelContinuousInsets.top + documentHeight + aanelContinuousInsets.bottom, 1)
     }
 
     override func targetYOffset(for location: PageLocation, viewportHeight: CGFloat) async -> CGFloat? {
@@ -823,7 +839,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         case let .locator(locator):
             for attempt in 0 ..< 6 {
                 if let offset = await locatorYOffset(for: locator) {
-                    return min(max(contentInsets.top + offset, 0), maxOffset)
+                    return min(max(aanelContinuousInsets.top + offset, 0), maxOffset)
                 }
 
                 guard attempt < 5 else {
