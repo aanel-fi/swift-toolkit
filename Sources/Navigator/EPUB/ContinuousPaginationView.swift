@@ -229,11 +229,23 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         for pass in 0 ..< 3 {
             let baseOffset = yOffset(before: index)
             let pageHeight = pageHeights.getOrNil(index) ?? estimatedPageHeight
-            let localOffset = (
-                isReady
-                    ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height)
-                    : nil
-            ) ?? defaultTargetYOffset(for: location, pageHeight: pageHeight, viewportHeight: scrollView.bounds.height)
+            let resolved = isReady
+                ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height)
+                : nil
+            // aanel: a READY page whose text anchor cannot be resolved
+            // (markup-heavy sentences — multi-line word art, nested spans —
+            // defeat the text walker) and which carries no progression has no
+            // meaningful destination. STAY PUT rather than yank to the chapter
+            // start: for read-along follows the correct sentence is typically
+            // already in the viewport.
+            if resolved == nil, isReady, pass == 0,
+               case let .locator(locator) = location,
+               locator.locations.progression == nil,
+               currentIndex == index {
+                return true
+            }
+            let localOffset = resolved
+                ?? defaultTargetYOffset(for: location, pageHeight: pageHeight, viewportHeight: scrollView.bounds.height)
             guard localOffset.isFinite else {
                 return pass > 0
             }
