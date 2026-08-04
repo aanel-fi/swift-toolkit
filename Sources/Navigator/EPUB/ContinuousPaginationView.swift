@@ -170,7 +170,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         currentIndex = index
         scrollView.contentOffset = CGPoint(x: 0, y: yOffset(before: index))
-        NSLog("[AanelState] reload idx=%d offset=%.0f contentSize=%.0f pages=%d est=%.0f", index, scrollView.contentOffset.y, scrollView.contentSize.height, pageCount, estimatedPageHeight)
 
         setCurrentIndex(index)
 
@@ -223,7 +222,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         // slightly-off landing beats a dead control.
         let isReady = await waitUntilViewIsLoaded(at: index, timeout: 8.0)
         synchronizeLayout()
-        NSLog("[AanelNav] goToIndex %d ready=%d loc=%@", index, isReady ? 1 : 0, String(describing: location))
 
         if !isReady {
             log(.warning, "Timed out waiting for continuous page \(index); landing on estimated offset for \(location)")
@@ -265,10 +263,8 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                case let .locator(locator) = location,
                locator.locations.progression == nil,
                currentIndex == index {
-                NSLog("[AanelNav] stay-put: unresolved anchor pass=%d", pass)
                 return true
             }
-            NSLog("[AanelNav] pass=%d resolved=%@ nearY=%@", pass, resolved.map { String(format: "%.0f", $0) } ?? "nil", nearY.map { String(format: "%.0f", $0) } ?? "nil")
             let localOffset = resolved
                 ?? defaultTargetYOffset(for: location, pageHeight: pageHeight, viewportHeight: scrollView.bounds.height)
             guard localOffset.isFinite else {
@@ -307,7 +303,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
         updateCurrentIndexFromViewport()
         delegate?.paginationViewDidUpdateViews(self)
-        NSLog("[AanelState] goToIndex done idx=%d offset=%.0f contentSize=%.0f base=%.0f", index, scrollView.contentOffset.y, scrollView.contentSize.height, yOffset(before: index))
         return true
     }
 
