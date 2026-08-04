@@ -474,7 +474,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
               if (!rect) {
                 return null;
               }
-              return rect.top - documentTopOffset();
+              return { top: rect.top - documentTopOffset(), height: rect.height || 0 };
             },
             findFirstVisibleLocatorInRect: function (rect) {
               var visibleRect = rect || {
@@ -958,8 +958,13 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             return maxOffset
         case let .locator(locator):
             for attempt in 0 ..< 6 {
-                if let offset = await locatorYOffset(for: locator, nearY: nearY.map { $0 - aanelContinuousInsets.top }) {
-                    return min(max(aanelContinuousInsets.top + offset, 0), maxOffset)
+                if let rect = await locatorYOffset(for: locator, nearY: nearY.map { $0 - aanelContinuousInsets.top }) {
+                    // aanel: centre the sentence's visible MASS at 50% of the
+                    // viewport (top-at-45% left long sentences hanging mostly
+                    // below centre — "tracking feels lazy/off-centre").
+                    let visibleMass = min(rect.height, viewportHeight * 0.5)
+                    let centred = rect.top + visibleMass / 2 - viewportHeight * 0.5
+                    return min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
                 }
 
                 guard attempt < 5 else {
@@ -972,7 +977,8 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
             if let progression = locator.locations.progression {
                 let documentHeight = measuredDocumentHeight ?? estimatedDocumentHeight
-                return min(max(contentInsets.top + documentHeight * progression, 0), maxOffset)
+                let centred = documentHeight * progression - viewportHeight * 0.5
+                return min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
             }
 
             return 0
@@ -1047,7 +1053,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         onPreferredHeightChange?()
     }
 
-    private func locatorYOffset(for locator: Locator, nearY: CGFloat?) async -> CGFloat? {
+    private func locatorYOffset(for locator: Locator, nearY: CGFloat?) async -> (top: CGFloat, height: CGFloat)? {
         guard let locatorJSON = try? locator.jsonString() else {
             return nil
         }
@@ -1056,13 +1062,14 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         let result = await evaluateScript("readiumContinuous.locatorYOffset(\(locatorJSON), \(nearArg));")
         guard
             case let .success(value) = result,
-            let number = value as? NSNumber
+            let dict = value as? [String: Any],
+            let top = (dict["top"] as? NSNumber).map({ CGFloat(truncating: $0) }),
+            top.isFinite
         else {
             return nil
         }
-
-        let offset = CGFloat(truncating: number)
-        return offset.isFinite ? offset : nil
+        let height = (dict["height"] as? NSNumber).map { CGFloat(truncating: $0) } ?? 0
+        return (top: top, height: height.isFinite ? max(0, height) : 0)
     }
 
     private func locatorRect(for locator: Locator) async -> CGRect? {

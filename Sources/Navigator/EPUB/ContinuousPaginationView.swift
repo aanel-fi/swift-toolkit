@@ -270,28 +270,20 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             guard localOffset.isFinite else {
                 return pass > 0
             }
-            // aanel-centre: land locator targets ~45% down the viewport
-            // (parity with the pre-continuous Rulla smooth-scroll centring)
-            // instead of at the viewport top edge under the chrome.
-            // .start/.end keep upstream semantics.
-            var adjustedLocalOffset = localOffset
-            if case .locator = location {
-                adjustedLocalOffset = max(0, localOffset - scrollView.bounds.height * 0.45)
-            }
-            let targetY = clampYOffset(baseOffset + adjustedLocalOffset)
+            // aanel: locator centring lives in the spread's targetYOffset
+            // (sentence mass at 50% viewport); resolved offsets arrive final.
+            let targetY = clampYOffset(baseOffset + localOffset)
 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
                 break
             }
 
-            // aanel-deadband: don't chase locator targets already inside the
-            // comfortable reading band — a follow that would move the surface
-            // <15% of the viewport keeps it still (sentence follows advance in
-            // small steps; the view recentres only once the highlight has
-            // walked far enough, and a listen-here tap on a visible sentence
-            // no longer nudges the page).
+            // aanel-deadband: skip moves smaller than 8% of the viewport —
+            // suppresses micro-nudges and the listen-here tap hop while any
+            // meaningfully off-centre (or off-screen) sentence still forces a
+            // recentre, since targets now centre the sentence MASS at 50%.
             if pass == 0, case .locator = location,
-               abs(scrollView.contentOffset.y - targetY) < scrollView.bounds.height * 0.15 {
+               abs(scrollView.contentOffset.y - targetY) < scrollView.bounds.height * 0.08 {
                 return true
             }
 
@@ -510,8 +502,12 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         case let .locator(locator):
             // aanel: last-resort estimate — a text-anchored locator without
             // progression lands at the chapter start rather than killing the
-            // navigation (paired with the goToIndex timeout fallback).
-            return max(0, pageHeight * (locator.locations.progression ?? 0))
+            // navigation (paired with the goToIndex timeout fallback). A
+            // progression estimate is centred like resolved targets.
+            guard let progression = locator.locations.progression else {
+                return 0
+            }
+            return max(0, pageHeight * progression - viewportHeight * 0.5)
         }
     }
 
