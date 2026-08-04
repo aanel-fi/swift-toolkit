@@ -85,6 +85,80 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             };
           }
 
+          function rangeForTextNormalized(searchRoot, target, before, after) {
+            var walker = document.createTreeWalker(searchRoot, NodeFilter.SHOW_TEXT, null);
+            var nodes = [];
+            var total = 0;
+            var node;
+            while ((node = walker.nextNode())) {
+              var raw = node.textContent || "";
+              if (!raw) { continue; }
+              nodes.push({ node: node, start: total, raw: raw });
+              total += raw.length;
+            }
+            if (nodes.length === 0) { return null; }
+            var full = "";
+            for (var i = 0; i < nodes.length; i += 1) { full += nodes[i].raw; }
+            var norm = "";
+            var map = [];
+            var lastSpace = true;
+            for (var j = 0; j < full.length; j += 1) {
+              var ch = full[j];
+              if (ch === "\u00AD") { continue; }
+              if (/[\u2010-\u2015\u2212]/.test(ch)) { ch = "-"; }
+              if (/\s/.test(ch)) {
+                if (lastSpace) { continue; }
+                norm += " ";
+                map.push(j);
+                lastSpace = true;
+              } else {
+                norm += ch;
+                map.push(j);
+                lastSpace = false;
+              }
+            }
+            function normStr(s) {
+              return String(s || "")
+                .replace(/\u00AD/g, "")
+                .replace(/[\u2010-\u2015\u2212]/g, "-")
+                .replace(/\s+/g, " ")
+                .trim();
+            }
+            var h = normStr(target);
+            if (!h) { return null; }
+            var b = normStr(before);
+            var a = normStr(after);
+            var best = -1;
+            var bestScore = -1;
+            var idx = norm.indexOf(h);
+            while (idx >= 0) {
+              var score = 0;
+              if (b && norm.slice(Math.max(0, idx - b.length - 2), idx).indexOf(b) >= 0) { score += 1; }
+              if (a && norm.slice(idx + h.length, idx + h.length + a.length + 2).indexOf(a) >= 0) { score += 1; }
+              if (score > bestScore) { bestScore = score; best = idx; }
+              idx = norm.indexOf(h, idx + 1);
+            }
+            if (best < 0) { return null; }
+            var rawStart = map[best];
+            var rawEnd = map[best + h.length - 1] + 1;
+            function locate(rawIndex) {
+              for (var n = 0; n < nodes.length; n += 1) {
+                var entry = nodes[n];
+                if (rawIndex < entry.start + entry.raw.length) {
+                  return { node: entry.node, offset: rawIndex - entry.start };
+                }
+              }
+              var last = nodes[nodes.length - 1];
+              return { node: last.node, offset: last.raw.length };
+            }
+            var startPos = locate(rawStart);
+            var endPos = locate(rawEnd - 1);
+            var range = document.createRange();
+            range.setStart(startPos.node, startPos.offset);
+            range.setEnd(endPos.node, endPos.offset + 1);
+            return range;
+          }
+
           function rangeForText(root, highlight, before, after) {
             var target = String(highlight || "").trim();
             if (!target) {
@@ -112,7 +186,11 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             }
 
             if (matches.length === 0) {
-              return null;
+              // aanel: exact per-node match failed (footnote superscripts,
+              // typographic spaces, soft hyphens split or alter the text
+              // nodes) — fall back to a normalized cross-node search so the
+              // follow resolves everything the decoration engine can.
+              return rangeForTextNormalized(searchRoot, target, before, after);
             }
 
             function score(match) {
