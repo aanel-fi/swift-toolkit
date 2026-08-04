@@ -395,6 +395,13 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         delegate?.paginationViewDidUpdateViews(self)
     }
 
+    // aanel: lets the navigator skip the pre-jump window rebuild when the
+    // target spread's view is already built (see the go(to:) anchored-jump
+    // path — rebuilding on every sentence follow caused visible churn).
+    func isViewReady(at index: Int) -> Bool {
+        readyViewIndices.contains(index)
+    }
+
     private func waitUntilViewIsLoaded(at index: Int, timeout: TimeInterval = 2.0) async -> Bool {
         guard !readyViewIndices.contains(index) else {
             return true

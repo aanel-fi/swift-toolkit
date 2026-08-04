@@ -841,7 +841,17 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         // in-resource offset. Reusing the current window can leave us with a
         // stale web view / height cache, which makes fragment-only jumps look
         // like no-ops after the first navigation.
-        if usesContinuousVerticalScrolling, spreadIndex != currentSpreadIndex || requiresPreciseContinuousAnchor {
+        //
+        // aanel: upstream's condition also caught SAME-spread text-anchored
+        // jumps — which is the read-along sentence-follow hot path — so every
+        // sentence triggered a full window rebuild (all webviews torn down,
+        // contentOffset reset to the chapter start, blank flash) before the
+        // goToIndex re-scrolled to the target. Rebuild ONLY when landing on a
+        // spread whose view isn't built yet (the stale-cache no-op case);
+        // goToIndex's load-wait + convergence loop handles ready views.
+        if usesContinuousVerticalScrolling,
+           spreadIndex != currentSpreadIndex || requiresPreciseContinuousAnchor,
+           (paginationView as? ContinuousPaginationView)?.isViewReady(at: spreadIndex) != true {
             paginationView.reloadAtIndex(
                 spreadIndex,
                 location: .locator(locator),
