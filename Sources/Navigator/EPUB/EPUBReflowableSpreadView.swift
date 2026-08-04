@@ -623,7 +623,6 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
                 text: Locator.Text(highlight: snippet)
             )
             guard let locatorJSON = try? locator.jsonString() else { return }
-            NSLog("[AanelSettle] posted %@ prog=%.3f snippet=%d", noteName, progression, snippet.count)
             NotificationCenter.default.post(
                 name: Notification.Name(noteName),
                 object: nil,
