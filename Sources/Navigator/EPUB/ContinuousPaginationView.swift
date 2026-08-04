@@ -41,6 +41,13 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     private var scrollAnimationContinuation: CheckedContinuation<Void, Never>?
     private var isAdjustingContentOffset = false
 
+    // aanel-settle-continuous-begin: state for the gesture-gated centre
+    // tracking (resume-preview marker + scroll-detach events). Mirrors the
+    // per-spread emitter that non-continuous scroll mode uses.
+    private var aanelSettleWorkItem: DispatchWorkItem?
+    private var aanelLastMoveEmitAt: TimeInterval = 0
+    // aanel-settle-continuous-end
+
     var isScrollEnabled: Bool {
         didSet { scrollView.isScrollEnabled = isScrollEnabled }
     }
@@ -192,12 +199,16 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
 
         setCurrentIndex(index)
-        let isReady = await waitUntilViewIsLoaded(at: index)
+        // aanel: 2s was not enough on device — LCP decryption + a heavy
+        // chapter can exceed it, and the old hard-fail made the jump a silent
+        // no-op ("unreliable jump controls"). Wait longer, and on timeout fall
+        // through to the estimated offset below instead of failing outright: a
+        // slightly-off landing beats a dead control.
+        let isReady = await waitUntilViewIsLoaded(at: index, timeout: 8.0)
         synchronizeLayout()
 
-        guard isReady || location.isStart else {
-            log(.warning, "Timed out waiting for continuous page \(index) to become ready for \(location)")
-            return false
+        if !isReady {
+            log(.warning, "Timed out waiting for continuous page \(index); landing on estimated offset for \(location)")
         }
 
         let baseOffset = yOffset(before: index)
@@ -210,7 +221,15 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         guard localOffset.isFinite else {
             return false
         }
-        let targetY = clampYOffset(baseOffset + localOffset)
+        // aanel-centre: land locator targets ~45% down the viewport (parity
+        // with the pre-continuous Rulla smooth-scroll centring) instead of at
+        // the viewport top edge under the chrome. .start/.end keep upstream
+        // semantics.
+        var adjustedLocalOffset = localOffset
+        if case .locator = location {
+            adjustedLocalOffset = max(0, localOffset - scrollView.bounds.height * 0.45)
+        }
+        let targetY = clampYOffset(baseOffset + adjustedLocalOffset)
 
         guard abs(scrollView.contentOffset.y - targetY) > 0.5 else {
             return true
@@ -409,10 +428,10 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         case .end:
             return max(pageHeight - viewportHeight, 0)
         case let .locator(locator):
-            guard let progression = locator.locations.progression else {
-                return .nan
-            }
-            return max(0, pageHeight * progression)
+            // aanel: last-resort estimate — a text-anchored locator without
+            // progression lands at the chapter start rather than killing the
+            // navigation (paired with the goToIndex timeout fallback).
+            return max(0, pageHeight * (locator.locations.progression ?? 0))
         }
     }
 
@@ -510,6 +529,47 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
 
         updateCurrentIndexFromViewport()
         delegate?.paginationViewDidUpdateViews(self)
+
+        // aanel-settle-continuous: gesture-gated centre tracking. While a USER
+        // gesture is in flight: every 0.12s emit the centre locator on
+        // AanelRulla.scrollMove (live resume-preview marker + scroll detach);
+        // 0.1s after the last frame, re-confirmed stopped, emit the
+        // authoritative AanelRulla.scrollSettle. Programmatic navigation
+        // animates via setContentOffset, which never sets isDragging/
+        // isDecelerating, so it stays silent by construction.
+        if scrollView.isDragging || scrollView.isDecelerating {
+            let now = Date().timeIntervalSinceReferenceDate
+            if now - aanelLastMoveEmitAt >= 0.12 {
+                aanelLastMoveEmitAt = now
+                aanelEmitCentreLocator(noteName: "AanelRulla.scrollMove")
+            }
+            aanelSettleWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self,
+                      !self.scrollView.isDragging,
+                      !self.scrollView.isDecelerating else { return }
+                self.aanelEmitCentreLocator(noteName: "AanelRulla.scrollSettle")
+            }
+            aanelSettleWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+        }
+    }
+
+    // aanel-settle-continuous: find the spread under the viewport centre and
+    // delegate the JS hit-test + Locator emission to it in its own coordinate
+    // space (spread frames live in this scroll view's content space).
+    private func aanelEmitCentreLocator(noteName: String) {
+        let centre = CGPoint(
+            x: scrollView.bounds.width / 2,
+            y: scrollView.contentOffset.y + scrollView.bounds.height / 2
+        )
+        guard let view = loadedViews.values.first(where: {
+            $0.frame.minY <= centre.y && centre.y < $0.frame.maxY
+        }), let spreadView = view as? EPUBReflowableSpreadView else { return }
+        spreadView.aanelEmitCentreLocator(
+            atLocalPoint: CGPoint(x: centre.x, y: centre.y - view.frame.minY),
+            noteName: noteName
+        )
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
