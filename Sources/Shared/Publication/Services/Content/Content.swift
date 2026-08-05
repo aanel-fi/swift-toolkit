@@ -86,7 +86,7 @@ public struct AnyEquatableContentElement: Equatable, ContentElement {
 
 /// An element which can be represented as human-readable text.
 ///
-/// The default implementation returns the first accessibility label associated to the element.
+/// The default implementation returns the accessible name of the element.
 public protocol TextualContentElement: ContentElement {
     /// Human-readable text representation for this element.
     var text: String? { get }
@@ -94,7 +94,7 @@ public protocol TextualContentElement: ContentElement {
 
 public extension TextualContentElement {
     var text: String? {
-        accessibilityLabel
+        accessibilityName
     }
 }
 
@@ -136,7 +136,7 @@ public struct ImageContentElement: Hashable, EmbeddedContentElement, TextualCont
     public var embeddedLink: Link
     public var attributes: [ContentAttribute]
 
-    /// Short piece of text associated with the image.
+    /// Caption of the image, from an enclosing figure's figcaption.
     public var caption: String?
 
     public init(locator: Locator, embeddedLink: Link, caption: String? = nil, attributes: [ContentAttribute] = []) {
@@ -144,11 +144,6 @@ public struct ImageContentElement: Hashable, EmbeddedContentElement, TextualCont
         self.embeddedLink = embeddedLink
         self.caption = caption
         self.attributes = attributes
-    }
-
-    public var text: String? {
-        // The caption might be a better text description than the accessibility label, when available.
-        caption.takeIf { !$0.isEmpty } ?? accessibilityLabel
     }
 }
 
@@ -158,10 +153,13 @@ public struct SVGContentElement: Hashable, TextualContentElement {
     public var attributes: [ContentAttribute]
 
     /// Raw SVG contents.
+    ///
+    /// When produced by the HTML content iterator, the markup may be
+    /// normalized (lowercased tag and attribute names, reflowed whitespace)
+    /// and is not guaranteed to be render-faithful.
     public var svg: String
 
-    /// Optional human-readable description of the image (e.g. from `<title>`,
-    ///  `<desc>`, `alt` or `title`).
+    /// Caption of the image, from an enclosing figure's figcaption.
     public var caption: String?
 
     public init(locator: Locator, svg: String, caption: String? = nil, attributes: [ContentAttribute] = []) {
@@ -169,10 +167,6 @@ public struct SVGContentElement: Hashable, TextualContentElement {
         self.svg = svg
         self.caption = caption
         self.attributes = attributes
-    }
-
-    public var text: String? {
-        caption.takeIf { !$0.isEmpty } ?? accessibilityLabel
     }
 }
 
@@ -234,8 +228,21 @@ public struct TextContentElement: Hashable, TextualContentElement {
 ///
 /// The `V` phantom type is there to perform static type checking when requesting an attribute.
 public struct ContentAttributeKey<V>: Hashable, Sendable {
+    @available(*, deprecated, renamed: "accessibilityName")
     public static var accessibilityLabel: ContentAttributeKey<String> {
         .init("accessibilityLabel")
+    }
+
+    /// Accessible name of the element, computed following a subset of
+    /// https://www.w3.org/TR/accname-1.2
+    public static var accessibilityName: ContentAttributeKey<String> {
+        .init("accessibilityName")
+    }
+
+    /// Accessible description of the element, computed following a subset of
+    /// https://www.w3.org/TR/accname-1.2
+    public static var accessibilityDescription: ContentAttributeKey<String> {
+        .init("accessibilityDescription")
     }
 
     public static var language: ContentAttributeKey<Language> {
@@ -278,8 +285,17 @@ public extension ContentAttributesHolder {
         self[.language]
     }
 
+    @available(*, deprecated, renamed: "accessibilityName")
     var accessibilityLabel: String? {
-        self[.accessibilityLabel]
+        self[.accessibilityName]
+    }
+
+    var accessibilityName: String? {
+        self[.accessibilityName]
+    }
+
+    var accessibilityDescription: String? {
+        self[.accessibilityDescription]
     }
 
     /// Gets the first attribute with the given `key`.

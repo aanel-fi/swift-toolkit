@@ -31,9 +31,15 @@ struct ImagePreview: View {
                         }
                     }
 
-                    if let accessibilityLabel = image.accessibilityLabel {
-                        LabeledContent("Accessibility Label") {
-                            Text(accessibilityLabel)
+                    if let accessibilityName = image.accessibilityName {
+                        LabeledContent("Accessibility Name") {
+                            Text(accessibilityName)
+                        }
+                    }
+
+                    if let accessibilityDescription = image.accessibilityDescription {
+                        LabeledContent("Accessibility Description") {
+                            Text(accessibilityDescription)
                         }
                     }
                 }

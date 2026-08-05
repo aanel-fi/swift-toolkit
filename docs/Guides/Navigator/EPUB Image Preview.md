@@ -35,13 +35,14 @@ Returning `true` consumes the event, preventing other observers from handling th
 
 **`ImageContentElement`** describes a bitmap image element and provides the following properties:
 
-| Property             | Type          | Description                                                                    |
-|----------------------|---------------|--------------------------------------------------------------------------------|
-| `embeddedLink`       | **`Link`**    | Points to the image resource in the publication                                |
-| `caption`            | **`String?`** | Caption extracted from a surrounding `<figcaption>` element or `alt` attribute |
-| `accessibilityLabel` | **`String?`** | Accessibility label extracted from the `aria-label` attribute                  |
+| Property                   | Type          | Description                                                                          |
+|----------------------------|---------------|--------------------------------------------------------------------------------------|
+| `embeddedLink`             | **`Link`**    | Points to the image resource in the publication                                      |
+| `caption`                  | **`String?`** | Caption from the enclosing figure's `<figcaption>` element                           |
+| `accessibilityName`        | **`String?`** | Accessible name, computed following a subset of [accname-1.2](https://www.w3.org/TR/accname-1.2)        |
+| `accessibilityDescription` | **`String?`** | Accessible description, computed following a subset of [accname-1.2](https://www.w3.org/TR/accname-1.2) |
 
-The `text` property returns the caption when available, otherwise the accessibility label — a convenient fallback when you need a single display string.
+The `text` property returns the accessible name. To display a single string, prefer the caption when available: `element.caption ?? element.accessibilityName`.
 
 > [!NOTE]
 > **`SVGContentElement`** follows a similar shape for inline SVG (`<svg>`), but exposes a `svg: String` property with the raw SVG source instead of `embeddedLink`. SVG images referenced via `<img src="...svg">` are reported as **`ImageContentElement`**.

@@ -91,13 +91,15 @@ Here are the default available implementations:
 * `AudioContentElement` - audio clips
 * `VideoContentElement` - video clips
 * `ImageContentElement` - bitmap images, with the additional property:
-    * `caption: String?` - figure caption, when available
+    * `caption: String?` - the caption from an enclosing figure's `figcaption`, when available
 
 #### Text
 
 ##### Textual elements
 
 The `TextualContentElement` protocol is implemented by any element which can be represented as human-readable text. This is useful when you want to extract the text content of a publication without caring for each individual type of elements.
+
+For media elements (image, SVG, audio and video), `text` returns the accessible name only. The caption of an image is not part of `text`, as the `figcaption` is already emitted as its own text element in the iteration stream.
 
 ```swift
 let wholeText = publication.content()
@@ -188,7 +190,7 @@ struct ImageIndex: View {
 
                     return Item(
                         locator: element.locator,
-                        text: element.caption ?? element.accessibilityLabel,
+                        text: element.caption ?? element.accessibilityName,
                         image: image
                     )
                 }
