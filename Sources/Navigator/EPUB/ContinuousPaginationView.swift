@@ -503,12 +503,15 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         case .end:
             return max(pageHeight - viewportHeight, 0)
         case let .locator(locator):
-            // aanel: last-resort estimate — a text-anchored locator without
-            // progression lands at the chapter start rather than killing the
-            // navigation (paired with the goToIndex timeout fallback). A
-            // progression estimate is centred like resolved targets.
+            // aanel: a text-anchored locator without progression has NO
+            // estimable destination — returning 0 here synthesized
+            // chapter-start jumps whenever the load-wait timed out (e.g. the
+            // follow-back chip racing a just-reloaded window). Return NaN so
+            // goToIndex fails the navigation and the caller's retry loop
+            // re-attempts once the spread is ready. Progression estimates are
+            // centred like resolved targets.
             guard let progression = locator.locations.progression else {
-                return 0
+                return .nan
             }
             return max(0, pageHeight * progression - viewportHeight * 0.5)
         }
