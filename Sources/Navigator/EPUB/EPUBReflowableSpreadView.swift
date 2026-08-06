@@ -701,7 +701,6 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
         let documentHeight = measuredDocumentHeight ?? 0
         guard documentHeight > 0 else {
-            NSLog("[AanelLoc] progression(in:%d) NO measured height", index)
             return 0 ... 0
         }
 
@@ -713,15 +712,11 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         )
         let intersection = visibleRect.intersection(contentRect)
         guard !intersection.isNull, !intersection.isEmpty else {
-            NSLog("[AanelGeo] idx=%d EMPTY visRect=(%.0f..%.0f) webMinY=%.0f docH=%.0f",
-                  index, visibleRect.minY, visibleRect.maxY, webView.frame.minY, documentHeight)
             return 0 ... 0
         }
 
         let first = min(max((intersection.minY - contentRect.minY) / documentHeight, 0), 1)
         let last = min(max((intersection.maxY - contentRect.minY) / documentHeight, first), 1)
-        NSLog("[AanelGeo] idx=%d visRect=(%.0f..%.0f) webMinY=%.0f docH=%.0f -> %.4f..%.4f",
-              index, visibleRect.minY, visibleRect.maxY, webView.frame.minY, documentHeight, first, last)
         return first ... last
     }
 
