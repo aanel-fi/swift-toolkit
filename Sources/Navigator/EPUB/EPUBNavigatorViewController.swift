@@ -478,7 +478,11 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             log(.debug, "-> on \(event)")
         }
 
-        return state.transition(event)
+        let before = state
+        let accepted = state.transition(event)
+        NSLog("[AanelState] %@ -> %@ accepted=%d",
+              String(describing: before), String(describing: event), accepted ? 1 : 0)
+        return accepted
     }
 
     /// Mapping between reading order hrefs and the table of contents title.
@@ -846,6 +850,11 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         }
 
         (currentLocation, viewport) = await computeCurrentLocationAndViewport()
+
+        NSLog("[AanelLoc] computed prog=%.4f viewport=%d state=%@",
+              currentLocation?.locations.progression ?? -1,
+              viewport != nil ? 1 : 0,
+              String(describing: state))
 
         // aanel: a non-nil viewport marks a genuine visible-spread
         // computation (the pending-jump shortcut and the no-spread guard both

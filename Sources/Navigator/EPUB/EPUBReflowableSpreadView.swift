@@ -701,6 +701,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
         let documentHeight = measuredDocumentHeight ?? 0
         guard documentHeight > 0 else {
+            NSLog("[AanelLoc] progression(in:%d) NO measured height", index)
             return 0 ... 0
         }
 
