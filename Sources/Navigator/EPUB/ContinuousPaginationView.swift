@@ -59,6 +59,16 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     private var aanelLastMoveEmitAt: TimeInterval = 0
     // aanel-settle-continuous-end
 
+    // aanel: throttle state for scroll-driven location updates. Every scroll
+    // frame fires scrollViewDidScroll; forwarding each one to
+    // paginationViewDidUpdateViews recomputes the current location and
+    // notifies the delegate (→ a JS bridge event per changed location) at up
+    // to 60Hz. Leading + trailing throttle: emit at most every 0.2s while
+    // scrolling, plus one trailing emit after the last frame so the final
+    // resting position is always captured.
+    private var aanelLastLocationEmitAt: TimeInterval = 0
+    private var aanelTrailingLocationWorkItem: DispatchWorkItem?
+
     // aanel: set when a user touch interrupts an in-flight programmatic
     // scroll animation — goToIndex's convergence loop checks it to stop
     // fighting the user.
@@ -610,7 +620,29 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
         }
 
         updateCurrentIndexFromViewport()
-        delegate?.paginationViewDidUpdateViews(self)
+
+        // aanel: throttled location update. Every scroll frame lands here;
+        // forwarding each one to paginationViewDidUpdateViews recomputes the
+        // current location and notifies the delegate (→ a JS bridge event per
+        // changed location) at up to 60Hz. Leading + trailing throttle: emit
+        // at most every 0.2s while scrolling, plus one trailing emit after
+        // the last frame so the final resting position is always captured.
+        // The goTo completion paths above emit directly — a completed jump's
+        // update is one-shot and authoritative.
+        let nowForEmit = Date().timeIntervalSinceReferenceDate
+        aanelTrailingLocationWorkItem?.cancel()
+        if nowForEmit - aanelLastLocationEmitAt >= 0.2 {
+            aanelLastLocationEmitAt = nowForEmit
+            delegate?.paginationViewDidUpdateViews(self)
+        } else {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                self.aanelLastLocationEmitAt = Date().timeIntervalSinceReferenceDate
+                self.delegate?.paginationViewDidUpdateViews(self)
+            }
+            aanelTrailingLocationWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
 
         // aanel-settle-continuous: gesture-gated centre tracking. While a USER
         // gesture is in flight: every 0.12s emit the centre locator on
