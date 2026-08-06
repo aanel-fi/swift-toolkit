@@ -478,11 +478,7 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             log(.debug, "-> on \(event)")
         }
 
-        let before = state
-        let accepted = state.transition(event)
-        NSLog("[AanelState] %@ -> %@ accepted=%d",
-              String(describing: before), String(describing: event), accepted ? 1 : 0)
-        return accepted
+        return state.transition(event)
     }
 
     /// Mapping between reading order hrefs and the table of contents title.
@@ -684,12 +680,6 @@ open class EPUBNavigatorViewController: InputObservableViewController,
 
     private func _reloadSpreads() {
         let locator = aanelPendingReloadLocation ?? aanelLastSettledLocation ?? currentLocation
-        NSLog("[AanelReload] restore href=%@ prog=%.4f pending=%d settled=%d scroll=%d",
-              locator?.href.string ?? "nil",
-              locator?.locations.progression ?? -1,
-              aanelPendingReloadLocation != nil ? 1 : 0,
-              aanelLastSettledLocation != nil ? 1 : 0,
-              usesContinuousVerticalScrolling ? 1 : 0)
 
         guard
             let paginationView = paginationView,
@@ -778,14 +768,10 @@ open class EPUBNavigatorViewController: InputObservableViewController,
                 // location computed in continuous scroll mode (device trace
                 // 2026-08-06 15:45: computes read 0.9599 during the layout
                 // transient, then 0.0000 at idle for the rest of the session).
-                let converted = spreadView.convert(visibleRect, from: spreadView.superview)
-                NSLog("[AanelGeo] vsv idx=%d frame=(%.0f..%.0f) viewport=(%.0f..%.0f) conv=(%.0f..%.0f)",
-                      index, spreadView.frame.minY, spreadView.frame.maxY,
-                      viewportRect.minY, viewportRect.maxY, converted.minY, converted.maxY)
                 return (
                     index: index,
                     spreadView: spreadView,
-                    visibleRect: converted
+                    visibleRect: spreadView.convert(visibleRect, from: spreadView.superview)
                 )
             }
     }
@@ -867,11 +853,6 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         }
 
         (currentLocation, viewport) = await computeCurrentLocationAndViewport()
-
-        NSLog("[AanelLoc] computed prog=%.4f viewport=%d state=%@",
-              currentLocation?.locations.progression ?? -1,
-              viewport != nil ? 1 : 0,
-              String(describing: state))
 
         // aanel: a non-nil viewport marks a genuine visible-spread
         // computation (the pending-jump shortcut and the no-spread guard both
