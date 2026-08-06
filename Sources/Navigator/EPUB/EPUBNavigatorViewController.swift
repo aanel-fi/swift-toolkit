@@ -665,6 +665,11 @@ open class EPUBNavigatorViewController: InputObservableViewController,
 
     private func _reloadSpreads() {
         let locator = aanelPendingReloadLocation ?? currentLocation
+        NSLog("[AanelReload] restore href=%@ prog=%.4f pending=%d scroll=%d",
+              locator?.href.string ?? "nil",
+              locator?.locations.progression ?? -1,
+              aanelPendingReloadLocation != nil ? 1 : 0,
+              usesContinuousVerticalScrolling ? 1 : 0)
 
         guard
             let paginationView = paginationView,
