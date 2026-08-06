@@ -778,10 +778,14 @@ open class EPUBNavigatorViewController: InputObservableViewController,
                 // location computed in continuous scroll mode (device trace
                 // 2026-08-06 15:45: computes read 0.9599 during the layout
                 // transient, then 0.0000 at idle for the rest of the session).
+                let converted = spreadView.convert(visibleRect, from: spreadView.superview)
+                NSLog("[AanelGeo] vsv idx=%d frame=(%.0f..%.0f) viewport=(%.0f..%.0f) conv=(%.0f..%.0f)",
+                      index, spreadView.frame.minY, spreadView.frame.maxY,
+                      viewportRect.minY, viewportRect.maxY, converted.minY, converted.maxY)
                 return (
                     index: index,
                     spreadView: spreadView,
-                    visibleRect: spreadView.convert(visibleRect, from: spreadView.superview)
+                    visibleRect: converted
                 )
             }
     }
