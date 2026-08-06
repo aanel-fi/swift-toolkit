@@ -765,10 +765,23 @@ open class EPUBNavigatorViewController: InputObservableViewController,
                     return nil
                 }
 
+                // aanel: `visibleRect` is in the scroll view's CONTENT
+                // coordinate space (both `frame` and `viewportRect` are), so
+                // convert from the spread view's superview — the scroll view,
+                // whose own coordinate space is the content space. Converting
+                // `from: paginationView` treated the rect as container-bounds
+                // coordinates and added the content offset a second time:
+                // near the top of the book the error is small, but deep into
+                // a long chapter the doubled offset lands past the document
+                // height, the content intersection comes back empty, and the
+                // computed progression collapses to 0 — which poisoned every
+                // location computed in continuous scroll mode (device trace
+                // 2026-08-06 15:45: computes read 0.9599 during the layout
+                // transient, then 0.0000 at idle for the rest of the session).
                 return (
                     index: index,
                     spreadView: spreadView,
-                    visibleRect: spreadView.convert(visibleRect, from: paginationView)
+                    visibleRect: spreadView.convert(visibleRect, from: spreadView.superview)
                 )
             }
     }
