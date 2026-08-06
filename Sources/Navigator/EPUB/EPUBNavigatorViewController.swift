@@ -665,14 +665,23 @@ open class EPUBNavigatorViewController: InputObservableViewController,
 
     private func _reloadSpreads() {
         let locator = aanelPendingReloadLocation ?? currentLocation
-        aanelPendingReloadLocation = nil
 
         guard
             let paginationView = paginationView,
             on(.load(locator))
         else {
+            // aanel: keep the pending pre-swap location for the RETRY — the
+            // state machine rejects .load while a jump is in flight (during
+            // playback a view-follow goTo is in flight every few seconds, so
+            // a mode switch routinely lands mid-jump on device). Consuming
+            // the pending before this guard destroyed it on the first failed
+            // attempt and the retry restored from the already-swapped (empty)
+            // container: chapter start (device-reported 2026-08-06, third
+            // round — the sim never hit it because its taps land between
+            // follows with the state idle).
             return
         }
+        aanelPendingReloadLocation = nil
 
         spreads = EPUBSpread.makeSpreads(
             for: publication,
