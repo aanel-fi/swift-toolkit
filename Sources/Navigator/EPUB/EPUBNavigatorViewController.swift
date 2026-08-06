@@ -607,8 +607,17 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         // reload restored to the current chapter's FIRST PAGE on every
         // Sivut<->Rulla mode switch (device-reported 2026-08-06: "switching to
         // Sivut lands at a completely wrong location").
+        //
+        // Prefer aanelLastSettledLocation over currentLocation: during
+        // playback a view-follow jump is in flight most of the time, and
+        // computeCurrentLocationAndViewport() short-circuits to the pending
+        // jump locator — a text-anchor-only locator with progression 0. The
+        // idle-only poll guard races (a jump can start during the await), so
+        // the STORED currentLocation is routinely poisoned with progression 0
+        // mid-playback. The settled location only ever comes from a genuine
+        // visible-spread computation.
         if containerNeedsReplacement {
-            aanelPendingReloadLocation = currentLocation
+            aanelPendingReloadLocation = aanelLastSettledLocation ?? currentLocation
         }
 
         if containerNeedsReplacement {
@@ -663,27 +672,28 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     // actually was.
     private var aanelPendingReloadLocation: Locator?
 
+    // aanel: the last location computed from spreads actually visible on
+    // screen (viewport != nil), never the pending-jump shortcut. This is the
+    // trustworthy "where the reader really is" during playback, when
+    // currentLocation is routinely a progression-0 text-anchor jump target.
+    private var aanelLastSettledLocation: Locator?
+
     private func _reloadSpreads() {
-        let locator = aanelPendingReloadLocation ?? currentLocation
-        NSLog("[AanelReload] restore href=%@ prog=%.4f pending=%d scroll=%d",
+        let locator = aanelPendingReloadLocation ?? aanelLastSettledLocation ?? currentLocation
+        NSLog("[AanelReload] restore href=%@ prog=%.4f pending=%d settled=%d scroll=%d",
               locator?.href.string ?? "nil",
               locator?.locations.progression ?? -1,
               aanelPendingReloadLocation != nil ? 1 : 0,
+              aanelLastSettledLocation != nil ? 1 : 0,
               usesContinuousVerticalScrolling ? 1 : 0)
 
         guard
             let paginationView = paginationView,
             on(.load(locator))
         else {
-            // aanel: keep the pending pre-swap location for the RETRY — the
-            // state machine rejects .load while a jump is in flight (during
-            // playback a view-follow goTo is in flight every few seconds, so
-            // a mode switch routinely lands mid-jump on device). Consuming
-            // the pending before this guard destroyed it on the first failed
-            // attempt and the retry restored from the already-swapped (empty)
-            // container: chapter start (device-reported 2026-08-06, third
-            // round — the sim never hit it because its taps land between
-            // follows with the state idle).
+            // aanel: keep the pending pre-swap location so a later retry
+            // (e.g. paginationView still nil) can still restore from it
+            // instead of the already-swapped (empty) container.
             return
         }
         aanelPendingReloadLocation = nil
@@ -836,6 +846,14 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         }
 
         (currentLocation, viewport) = await computeCurrentLocationAndViewport()
+
+        // aanel: a non-nil viewport marks a genuine visible-spread
+        // computation (the pending-jump shortcut and the no-spread guard both
+        // return a nil viewport). Only those update the settled location used
+        // to restore across container swaps.
+        if viewport != nil, let settled = currentLocation {
+            aanelLastSettledLocation = settled
+        }
 
         if
             let delegate = delegate,
