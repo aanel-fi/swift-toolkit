@@ -601,6 +601,16 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             ($0 is ContinuousPaginationView) != usesContinuousVerticalScrolling
         } ?? true
 
+        // aanel: capture the location BEFORE the container swap. currentLocation
+        // is computed from the pagination view; once the old container is
+        // removed, the new (empty) one reports index 0 / progression 0, so the
+        // reload restored to the current chapter's FIRST PAGE on every
+        // Sivut<->Rulla mode switch (device-reported 2026-08-06: "switching to
+        // Sivut lands at a completely wrong location").
+        if containerNeedsReplacement {
+            aanelPendingReloadLocation = currentLocation
+        }
+
         if containerNeedsReplacement {
             let newContainer = makePaginationView(hasPositions: !positionsByReadingOrder.isEmpty)
             newContainer.frame = view.bounds
@@ -648,8 +658,14 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         _reloadSpreads()
     }
 
+    // aanel: see invalidatePaginationView — the pre-swap location, consumed by
+    // the next reload so a container replacement restores where the reader
+    // actually was.
+    private var aanelPendingReloadLocation: Locator?
+
     private func _reloadSpreads() {
-        let locator = currentLocation
+        let locator = aanelPendingReloadLocation ?? currentLocation
+        aanelPendingReloadLocation = nil
 
         guard
             let paginationView = paginationView,
