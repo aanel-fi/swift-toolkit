@@ -617,7 +617,22 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         // mid-playback. The settled location only ever comes from a genuine
         // visible-spread computation.
         if containerNeedsReplacement {
-            aanelPendingReloadLocation = aanelLastSettledLocation ?? currentLocation
+            // aanel: the restore target decision lives HERE, on the native
+            // side, in one place. If a read-along sentence is currently
+            // decorated (the app applies the active narrated sentence as a
+            // "read-along-*" decoration), the reload restores DIRECTLY to
+            // that sentence — the reload's own navigation waits for the new
+            // surface and centres the anchor, so no cross-bridge recovery
+            // shot is needed and there is no JS-vs-native timing to lose.
+            // (Every previous recovery design had JS re-following after the
+            // swap and racing native state it cannot observe — consumed by
+            // the old container, fired over a settling surface, etc.)
+            // Otherwise: the last settled on-screen location, geometric.
+            let readAlongSentence = decorations
+                .first { $0.key.hasPrefix("read-along-") && !$0.value.isEmpty }?
+                .value.first?.decoration.locator
+            let sentenceTarget = readAlongSentence?.text.highlight != nil ? readAlongSentence : nil
+            aanelPendingReloadLocation = sentenceTarget ?? aanelLastSettledLocation ?? currentLocation
         }
 
         if containerNeedsReplacement {
