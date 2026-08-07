@@ -163,6 +163,12 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         loadPagesTask?.cancel()
         pendingReloadNavigationTask?.cancel()
+        // aanel-drift-glide: a glide outliving the container would complete
+        // ~0.7s later and run updateCurrentIndexFromViewport → setCurrentIndex
+        // → loadPages(), resurrecting the page-loading task cancelled on the
+        // line above and emitting a locator update from a detached container
+        // (under the Two-ReadiumView swap that lands mid mode switch).
+        aanelCancelDriftGlide()
         for (_, view) in loadedViews {
             (view as? ContinuousPageView)?.onPreferredHeightChange = nil
             view.removeFromSuperview()
@@ -196,6 +202,11 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         loadPagesTask?.cancel()
         pendingReloadNavigationTask?.cancel()
+        // aanel-drift-glide: the reload rewrites contentOffset below, into a
+        // height space this glide's absolute target predates — an in-flight
+        // animator would override that write on its next frame and then
+        // resolve to a presentation value from the OLD layout. Freeze first.
+        aanelCancelDriftGlide()
         loadingIndexQueue.removeAll()
         onViewLoadedCallbacks.removeAll()
         readyViewIndices.removeAll()
