@@ -283,21 +283,26 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 ? await resolvedTargetYOffset(at: index, location: location, viewportHeight: scrollView.bounds.height, nearY: nearY)
                 : nil
             // aanel: a READY page whose text anchor cannot be resolved
-            // (markup-heavy sentences, transient layout races) and which
-            // carries no progression has no meaningful destination — NEVER
-            // synthesize a chapter-start landing from `progression nil → 0`.
-            // Same spread (or any later pass): hold position. Cross-spread
-            // first pass: report FAILURE so the caller's retry loop can
-            // re-attempt once the anchor resolves — currentIndex derives from
-            // the viewport TOP edge, so normal border-crossing reading makes
-            // currentIndex lag the active chapter and the old guard leaked a
-            // chapter-start jump exactly there.
+            // (markup-heavy sentences, transient layout races, a freshly
+            // reloaded webview still settling) and which carries no
+            // progression has no meaningful destination — NEVER synthesize a
+            // chapter-start landing from `progression nil → 0`. First pass:
+            // hold position but report FAILURE so the caller's retry loop
+            // re-attempts once the anchor resolves. (Same-spread used to
+            // report success here, which silently ended the mode-switch
+            // recovery follow as a no-op whenever the anchor missed on the
+            // just-reloaded webview — the view then recentred only on the
+            // NEXT sentence; device-reported 2026-08-07. A retrying caller
+            // is superseded by newer follows via its generation counter, so
+            // reporting failure never causes stale movement.) Later passes:
+            // an earlier pass already landed a resolved offset — hold.
             if resolved == nil, isReady,
                case let .locator(locator) = location,
                locator.locations.progression == nil {
-                if currentIndex == index || pass > 0 {
+                if pass > 0 {
                     return true
                 }
+                NSLog("[AanelFollow] anchor MISS idx=%d — report failure, caller retries", index)
                 return false
             }
             let localOffset = resolved
@@ -308,6 +313,8 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // aanel: locator centring lives in the spread's targetYOffset
             // (sentence mass at 50% viewport); resolved offsets arrive final.
             let targetY = clampYOffset(baseOffset + localOffset)
+            NSLog("[AanelFollow] land idx=%d pass=%d resolved=%d targetY=%.0f current=%.0f",
+                  index, pass, resolved != nil ? 1 : 0, targetY, scrollView.contentOffset.y)
 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
                 break
