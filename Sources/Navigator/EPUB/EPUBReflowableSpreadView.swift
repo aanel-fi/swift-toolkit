@@ -963,7 +963,22 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
                     // below centre — "tracking feels lazy/off-centre").
                     let visibleMass = min(rect.height, viewportHeight * 0.5)
                     let centred = rect.top + visibleMass / 2 - viewportHeight * 0.5
-                    return min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
+                    let offset = min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
+                    NSLog("[AanelCentre] rectTop=%.0f rectH=%.0f viewportH=%.0f insetTop=%.0f -> offset=%.0f",
+                          rect.top, rect.height, viewportHeight, aanelContinuousInsets.top, offset)
+                    // Post-landing verification: re-query the same anchor 1.2s
+                    // later and log where it ACTUALLY sits in the viewport —
+                    // catches content reflow after the landing (device reports
+                    // an off-centre highlight while the computed target says
+                    // centred).
+                    Task { [weak self] in
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        guard let self,
+                              let later = await self.locatorYOffset(for: locator, nearY: nil) else { return }
+                        NSLog("[AanelCentre] verify rectTop=%.0f (was %.0f) drift=%.0f",
+                              later.top, rect.top, later.top - rect.top)
+                    }
+                    return offset
                 }
 
                 guard attempt < 5 else {
