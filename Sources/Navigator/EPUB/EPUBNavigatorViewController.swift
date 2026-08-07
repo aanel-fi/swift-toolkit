@@ -703,6 +703,24 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     private var aanelStashedHeights: [CGFloat]?
     private var aanelStashedHeightsBasis: AanelHeightBasis?
 
+    /// aanel: measured continuous-mode page heights of the current container,
+    /// for an app-side reopen cache. Nil when not in continuous mode.
+    public func aanelHarvestContinuousHeights() -> [CGFloat]? {
+        (paginationView as? ContinuousPaginationView)?.aanelMeasuredHeights
+    }
+
+    /// aanel: seed page heights measured by a PREVIOUS navigator instance
+    /// (same publication). Consumed by the next continuous container build;
+    /// ignored unless the current width and font size match the basis the
+    /// heights were measured under. Lets a reopened book lay out from real
+    /// geometry instead of re-measuring visibly ("3-5 jumps on open").
+    public func aanelSeedContinuousHeights(
+        _ heights: [CGFloat], measuredAtWidth width: CGFloat, fontSize: Double
+    ) {
+        aanelStashedHeights = heights
+        aanelStashedHeightsBasis = AanelHeightBasis(width: width, fontSize: fontSize)
+    }
+
     // aanel: the last location computed from spreads actually visible on
     // screen (viewport != nil), never the pending-jump shortcut. This is the
     // trustworthy "where the reader really is" during playback, when
