@@ -508,6 +508,14 @@ class EPUBSpreadView: UIView, Loggable, ContinuousPageView {
         nil
     }
 
+    // aanel: true when the LAST targetYOffset result came from resolving the
+    // locator's text anchor in the document; false when it fell back to the
+    // coarse progression estimate (e.g. the anchor is not resolvable yet on
+    // a just-reloaded webview). Read by ContinuousPaginationView.goToIndex
+    // right after awaiting targetYOffset — MainActor-sequential, so there is
+    // no interleaving hazard.
+    var aanelLastTargetFromAnchor = true
+
     enum Direction: CustomStringConvertible {
         case left
         case right
