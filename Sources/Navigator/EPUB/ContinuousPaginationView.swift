@@ -218,12 +218,27 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 self.pendingReloadNavigationTask = nil
             }
 
-            _ = await self.goToIndex(
-                index,
-                location: location,
-                options: NavigatorGoOptions(animated: false),
-                cancelPendingReloadNavigation: false
-            )
+            // aanel: goToIndex reports FAILURE for provisional landings
+            // (text-anchored locator whose anchor is not yet resolvable on
+            // the fresh webview — it lands the coarse estimate first). Retry
+            // until the anchor resolves so the reload restore itself
+            // finishes exactly on the target sentence; any explicit user
+            // navigation cancels this task and supersedes.
+            for _ in 0 ..< 12 {
+                let landed = await self.goToIndex(
+                    index,
+                    location: location,
+                    options: NavigatorGoOptions(animated: false),
+                    cancelPendingReloadNavigation: false
+                )
+                if landed || Task.isCancelled {
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                if Task.isCancelled {
+                    return
+                }
+            }
         }
     }
 
