@@ -317,7 +317,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 if pass > 0 {
                     return true
                 }
-                NSLog("[AanelFollow] anchor MISS idx=%d — report failure, caller retries", index)
                 return false
             }
             // aanel: a target computed WITHOUT resolving the text anchor
@@ -347,8 +346,6 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // aanel: locator centring lives in the spread's targetYOffset
             // (sentence mass at 50% viewport); resolved offsets arrive final.
             let targetY = clampYOffset(baseOffset + localOffset)
-            NSLog("[AanelFollow] land idx=%d pass=%d anchor=%d targetY=%.0f current=%.0f",
-                  index, pass, fromAnchor ? 1 : 0, targetY, scrollView.contentOffset.y)
 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
                 if provisional {
