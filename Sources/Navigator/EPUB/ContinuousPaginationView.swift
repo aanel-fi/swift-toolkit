@@ -87,6 +87,14 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
     // fighting the user.
     private var aanelUserInterrupted = false
 
+    // aanel-drift-glide: slow eased recenter for drift the deadband would
+    // otherwise let accumulate (see goToIndex). Lives entirely OUTSIDE the
+    // scrollAnimationContinuation protocol: nothing awaits it, it never fires
+    // scrollViewDidEndScrollingAnimation, and it is cancelled (frozen in
+    // place) by any user touch, any new navigation, or any direct
+    // contentOffset write — it must never fight the user or a real jump.
+    private var aanelDriftGlideAnimator: UIViewPropertyAnimator?
+
     var isScrollEnabled: Bool {
         didSet { scrollView.isScrollEnabled = isScrollEnabled }
     }
@@ -261,6 +269,9 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             pendingReloadNavigationTask = nil
         }
 
+        // aanel-drift-glide: a new navigation owns the surface.
+        aanelCancelDriftGlide()
+
         setCurrentIndex(index)
         // aanel: 2s was not enough on device — LCP decryption + a heavy
         // chapter can exceed it, and the old hard-fail made the jump a silent
@@ -356,14 +367,29 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 break
             }
 
-            // aanel-deadband: skip moves smaller than 8% of the viewport —
-            // suppresses micro-nudges and the listen-here tap hop while any
-            // meaningfully off-centre (or off-screen) sentence still forces a
-            // recentre, since targets now centre the sentence MASS at 50%.
-            // A PROVISIONAL target never earns the deadband's success —
+            // aanel-deadband: moves smaller than 8% of the viewport never use
+            // the discrete jump path — suppresses micro-nudges and the
+            // listen-here tap hop, since targets centre the sentence MASS at
+            // 50%. A PROVISIONAL target never earns the deadband's success —
             // report failure so the retry refines against the real anchor.
+            //
+            // aanel-drift-glide: a pure skip let per-sentence advances
+            // accumulate up to the full 8% before a visible >8% correction
+            // recentred the view — the highlight drifted to ~70% of the
+            // viewport and the eventual catch-up read as a jump (device
+            // report 2026-08-07, right after a Sivut→Rulla switch). Instead
+            // of skipping, correct residual drift of one line or more
+            // (≥2.5% viewport) with a SLOW eased glide to the same centred
+            // target: judder is abruptness, not motion — a ~0.7s creep reads
+            // as teleprompter tracking. Sub-line jitter (same-sentence
+            // re-resolutions) stays fully suppressed, and the glide only
+            // follows anchor-exact targets on animated navigations.
             if pass == 0, case .locator = location,
                abs(scrollView.contentOffset.y - targetY) < scrollView.bounds.height * 0.08 {
+                if !provisional, animated,
+                   abs(scrollView.contentOffset.y - targetY) >= scrollView.bounds.height * 0.025 {
+                    aanelStartDriftGlide(to: targetY)
+                }
                 return !provisional
             }
 
@@ -504,6 +530,12 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // convergence loop in goToIndex re-targets after the interrupt.
             scrollAnimationContinuation?.resume()
             scrollAnimationContinuation = nil
+            // aanel-drift-glide: while the animator owns contentOffset a
+            // direct write would be swallowed by the next animation frame,
+            // and the glide's absolute target is stale once content above
+            // the viewport changed height — freeze it; the next follow
+            // recentres.
+            aanelCancelDriftGlide()
             scrollView.contentOffset.y += newHeight - oldHeight
             isAdjustingContentOffset = false
         }
@@ -600,7 +632,41 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
     }
 
+    // aanel-drift-glide: gentle catch-up for deadband-suppressed drift.
+    // UIViewPropertyAnimator drives contentOffset directly, so every frame
+    // goes through scrollViewDidScroll with isDragging false — the throttled
+    // location updates follow the glide and the gesture-gated settle/move
+    // emitters stay silent, exactly like an animated setContentOffset.
+    private func aanelStartDriftGlide(to targetY: CGFloat) {
+        aanelCancelDriftGlide()
+        let animator = UIViewPropertyAnimator(duration: 0.7, curve: .easeInOut) { [weak self] in
+            self?.scrollView.contentOffset = CGPoint(x: 0, y: targetY)
+        }
+        animator.addCompletion { [weak self] position in
+            guard let self, position == .end else { return }
+            self.aanelDriftGlideAnimator = nil
+            // One authoritative update at rest, matching the goTo
+            // completion paths.
+            self.updateCurrentIndexFromViewport()
+            self.delegate?.paginationViewDidUpdateViews(self)
+        }
+        aanelDriftGlideAnimator = animator
+        animator.startAnimation()
+    }
+
+    // aanel-drift-glide: freeze in place. stopAnimation(true) leaves the
+    // presentation value as the model value and never calls the completion.
+    private func aanelCancelDriftGlide() {
+        guard let animator = aanelDriftGlideAnimator else {
+            return
+        }
+        aanelDriftGlideAnimator = nil
+        animator.stopAnimation(true)
+    }
+
     private func setContentOffset(_ contentOffset: CGPoint, animated: Bool) async {
+        // aanel-drift-glide: a real programmatic scroll supersedes the glide.
+        aanelCancelDriftGlide()
         if animated {
             await withCheckedContinuation { continuation in
                 scrollAnimationContinuation?.resume()
@@ -619,6 +685,9 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
 
         isAdjustingContentOffset = true
+        // aanel-drift-glide: same direct-write conflict as the height
+        // compensation above — freeze the glide before clamping.
+        aanelCancelDriftGlide()
         scrollView.contentOffset.y = clamped
         isAdjustingContentOffset = false
     }
@@ -799,6 +868,9 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
     // the navigator state machine) and flag the interruption so the
     // convergence loop yields to the user.
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // aanel-drift-glide: never fight the user — freeze the glide where
+        // it is the moment a touch starts a drag.
+        aanelCancelDriftGlide()
         if scrollAnimationContinuation != nil {
             aanelUserInterrupted = true
             scrollAnimationContinuation?.resume()
