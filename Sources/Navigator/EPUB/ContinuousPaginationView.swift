@@ -305,6 +305,25 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 NSLog("[AanelFollow] anchor MISS idx=%d — report failure, caller retries", index)
                 return false
             }
+            // aanel: a target computed WITHOUT resolving the text anchor
+            // (view not ready, or the spread fell back to the coarse
+            // progression estimate) is PROVISIONAL for text-anchored
+            // locators: land it so the reader is roughly right, but report
+            // failure so the caller's retry loop re-attempts and snaps to
+            // the anchor-exact position once the webview can resolve it.
+            // Without this, mode-switch recovery follows landed the sidecar's
+            // chapter-fraction estimate ~200pt low and reported success —
+            // the exact landing then waited for the NEXT sentence
+            // (device trace 2026-08-07, [AanelCentre] absent on recovery
+            // landings).
+            let fromAnchor = resolved != nil
+                && ((loadedViews[index] as? EPUBSpreadView)?.aanelLastTargetFromAnchor ?? true)
+            let textAnchored: Bool = {
+                if case let .locator(l) = location, l.text.highlight != nil { return true }
+                return false
+            }()
+            let provisional = textAnchored && !fromAnchor
+
             let localOffset = resolved
                 ?? defaultTargetYOffset(for: location, pageHeight: pageHeight, viewportHeight: scrollView.bounds.height)
             guard localOffset.isFinite else {
@@ -313,10 +332,15 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // aanel: locator centring lives in the spread's targetYOffset
             // (sentence mass at 50% viewport); resolved offsets arrive final.
             let targetY = clampYOffset(baseOffset + localOffset)
-            NSLog("[AanelFollow] land idx=%d pass=%d resolved=%d targetY=%.0f current=%.0f",
-                  index, pass, resolved != nil ? 1 : 0, targetY, scrollView.contentOffset.y)
+            NSLog("[AanelFollow] land idx=%d pass=%d anchor=%d targetY=%.0f current=%.0f",
+                  index, pass, fromAnchor ? 1 : 0, targetY, scrollView.contentOffset.y)
 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
+                if provisional {
+                    updateCurrentIndexFromViewport()
+                    delegate?.paginationViewDidUpdateViews(self)
+                    return false
+                }
                 break
             }
 
@@ -324,15 +348,23 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // suppresses micro-nudges and the listen-here tap hop while any
             // meaningfully off-centre (or off-screen) sentence still forces a
             // recentre, since targets now centre the sentence MASS at 50%.
+            // A PROVISIONAL target never earns the deadband's success —
+            // report failure so the retry refines against the real anchor.
             if pass == 0, case .locator = location,
                abs(scrollView.contentOffset.y - targetY) < scrollView.bounds.height * 0.08 {
-                return true
+                return !provisional
             }
 
             await setContentOffset(CGPoint(x: 0, y: targetY), animated: animated)
 
             if aanelUserInterrupted {
                 break
+            }
+
+            if provisional {
+                updateCurrentIndexFromViewport()
+                delegate?.paginationViewDidUpdateViews(self)
+                return false
             }
         }
         updateCurrentIndexFromViewport()

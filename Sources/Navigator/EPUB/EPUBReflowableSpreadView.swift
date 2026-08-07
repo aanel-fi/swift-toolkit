@@ -950,6 +950,9 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         let pageHeight = preferredHeight(for: bounds.width)
         let maxOffset = max(pageHeight - viewportHeight, 0)
 
+        // Exact by definition unless the locator branch falls back below.
+        aanelLastTargetFromAnchor = true
+
         switch location {
         case .start:
             return 0
@@ -961,24 +964,10 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
                     // aanel: centre the sentence's visible MASS at 50% of the
                     // viewport (top-at-45% left long sentences hanging mostly
                     // below centre — "tracking feels lazy/off-centre").
+                    aanelLastTargetFromAnchor = true
                     let visibleMass = min(rect.height, viewportHeight * 0.5)
                     let centred = rect.top + visibleMass / 2 - viewportHeight * 0.5
-                    let offset = min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
-                    NSLog("[AanelCentre] rectTop=%.0f rectH=%.0f viewportH=%.0f insetTop=%.0f -> offset=%.0f",
-                          rect.top, rect.height, viewportHeight, aanelContinuousInsets.top, offset)
-                    // Post-landing verification: re-query the same anchor 1.2s
-                    // later and log where it ACTUALLY sits in the viewport —
-                    // catches content reflow after the landing (device reports
-                    // an off-centre highlight while the computed target says
-                    // centred).
-                    Task { [weak self] in
-                        try? await Task.sleep(nanoseconds: 1_200_000_000)
-                        guard let self,
-                              let later = await self.locatorYOffset(for: locator, nearY: nil) else { return }
-                        NSLog("[AanelCentre] verify rectTop=%.0f (was %.0f) drift=%.0f",
-                              later.top, rect.top, later.top - rect.top)
-                    }
-                    return offset
+                    return min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
                 }
 
                 guard attempt < 5 else {
@@ -988,6 +977,16 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
                 await updateDocumentHeight()
                 try? await Task.sleep(seconds: 0.05)
             }
+
+            // aanel: the progression fallback is a COARSE estimate (for
+            // read-along locators it is the sidecar's chapter fraction, off
+            // by 100-250pt) — mark it so goToIndex can land it provisionally
+            // and report failure for text-anchored locators, letting the
+            // caller's retry loop snap to the anchor-exact position once the
+            // webview can resolve it (device trace 2026-08-07: mode-switch
+            // recovery follows landed the fallback ~200pt low and reported
+            // success — the exact landing then waited for the next sentence).
+            aanelLastTargetFromAnchor = false
 
             if let progression = locator.locations.progression {
                 let documentHeight = measuredDocumentHeight ?? estimatedDocumentHeight
