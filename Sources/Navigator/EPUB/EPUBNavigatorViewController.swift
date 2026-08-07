@@ -621,10 +621,31 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         }
 
         if containerNeedsReplacement {
+            // aanel: harvest measured page heights when swapping AWAY from the
+            // continuous container; seed them into the next continuous
+            // instance (a Sivut->Rulla roundtrip). Rebuilding from estimates
+            // made every late height measurement a visible reflow — the
+            // device-reported "3-5 jumps" on flipping back to Rulla. Guarded
+            // by width + fontSize: a changed layout basis invalidates them.
+            if let outgoing = currentContainer as? ContinuousPaginationView {
+                aanelStashedHeights = outgoing.aanelMeasuredHeights
+                aanelStashedHeightsBasis = AanelHeightBasis(
+                    width: view.bounds.width, fontSize: settings.fontSize
+                )
+            }
+
             let newContainer = makePaginationView(hasPositions: !positionsByReadingOrder.isEmpty)
             newContainer.frame = view.bounds
             newContainer.autoresizingMask = [.flexibleHeight, .flexibleWidth]
             newContainer.isUserInteractionEnabled = (state == .idle)
+
+            if let incoming = newContainer as? ContinuousPaginationView,
+               let heights = aanelStashedHeights,
+               aanelStashedHeightsBasis == AanelHeightBasis(
+                   width: view.bounds.width, fontSize: settings.fontSize
+               ) {
+                incoming.aanelSeedHeights(heights)
+            }
 
             currentContainer?.removeFromSuperview()
             paginationView = newContainer
@@ -671,6 +692,16 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     // the next reload so a container replacement restores where the reader
     // actually was.
     private var aanelPendingReloadLocation: Locator?
+
+    // aanel: measured continuous-mode page heights stashed across a container
+    // swap, with the layout basis they were measured under.
+    private struct AanelHeightBasis: Equatable {
+        let width: CGFloat
+        let fontSize: Double
+    }
+
+    private var aanelStashedHeights: [CGFloat]?
+    private var aanelStashedHeightsBasis: AanelHeightBasis?
 
     // aanel: the last location computed from spreads actually visible on
     // screen (viewport != nil), never the pending-jump shortcut. This is the

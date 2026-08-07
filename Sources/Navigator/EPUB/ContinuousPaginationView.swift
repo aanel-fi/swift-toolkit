@@ -33,6 +33,19 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
     private var pageHeights: [CGFloat] = []
 
+    // aanel: measured page heights survive a container swap. A Sivut->Rulla
+    // flip rebuilds this container with every height back at the estimate;
+    // as real heights arrive one by one the content reflows — each arrival a
+    // visible jump (device-reported "3-5 jumps" on flip-back, 2026-08-07).
+    // The navigator harvests the outgoing instance's heights and seeds the
+    // next one, so the first positioning starts from the real geometry.
+    var aanelMeasuredHeights: [CGFloat] { pageHeights }
+    private var aanelSeededHeights: [CGFloat]?
+
+    func aanelSeedHeights(_ heights: [CGFloat]) {
+        aanelSeededHeights = heights
+    }
+
     // aanel: reloadAtIndex can run BEFORE the first layout pass, seeding the
     // whole array with a degenerate estimate (bounds height 0 → 1pt) that
     // never self-corrects for spreads outside the preload window. Every far
@@ -162,7 +175,16 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         precondition(0 ..< pageCount ~= index)
 
         self.pageCount = pageCount
-        pageHeights = Array(repeating: estimatedPageHeight, count: pageCount)
+        // aanel: prefer heights seeded from the previous container instance
+        // (same publication, width, and font — see aanelSeedHeights). The
+        // seed is one-shot: a later reload with a changed page count falls
+        // back to estimates.
+        if let seeded = aanelSeededHeights, seeded.count == pageCount {
+            pageHeights = seeded
+        } else {
+            pageHeights = Array(repeating: estimatedPageHeight, count: pageCount)
+        }
+        aanelSeededHeights = nil
 
         loadPagesTask?.cancel()
         pendingReloadNavigationTask?.cancel()
