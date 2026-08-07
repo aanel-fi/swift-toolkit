@@ -667,12 +667,30 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
     // aanel-drift-glide: freeze in place. stopAnimation(true) leaves the
     // presentation value as the model value and never calls the completion.
+    //
+    // Writing that value back into the model contentOffset fires
+    // scrollViewDidScroll SYNCHRONOUSLY, so a cancel is a direct contentOffset
+    // write like any other in this file and needs the same isAdjusting
+    // suppression: cancelling against a half-rebuilt container (reloadAtIndex
+    // has reset pageHeights while loadedViews/currentIndex/contentOffset are
+    // still the old layout's; willMove has just torn the views down) let the
+    // re-entrant updateCurrentIndexFromViewport resolve a stale offset against
+    // a fresh height table and setCurrentIndex/loadPages build a window that
+    // was discarded moments later — main-thread churn that showed up as a
+    // transient blank across a mode switch. Guarding here rather than at the
+    // call sites keeps every present and future cancel safe by construction.
+    // Save/restore instead of forcing false, so a cancel nested inside an
+    // existing adjustment (updatePageHeight, clampContentOffsetIfNeeded) does
+    // not re-enable the delegate for the remainder of the enclosing block.
     private func aanelCancelDriftGlide() {
         guard let animator = aanelDriftGlideAnimator else {
             return
         }
         aanelDriftGlideAnimator = nil
+        let wasAdjustingContentOffset = isAdjustingContentOffset
+        isAdjustingContentOffset = true
         animator.stopAnimation(true)
+        isAdjustingContentOffset = wasAdjustingContentOffset
     }
 
     private func setContentOffset(_ contentOffset: CGPoint, animated: Bool) async {
