@@ -418,6 +418,27 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
         updateCurrentIndexFromViewport()
         delegate?.paginationViewDidUpdateViews(self)
+        // aanel-settle-programmatic: the gesture-gated centre tracking in
+        // scrollViewDidScroll CANNOT fire for a programmatic landing —
+        // setContentOffset never sets isDragging/isDecelerating, so it is
+        // silent by construction (see the comment there). A TOC/bookmark/
+        // search jump therefore never measured the centre at all, and the
+        // consumer fell back to a progression read taken at the viewport TOP
+        // (updateCurrentIndexFromViewport uses contentOffset.y + 1), which at
+        // a chapter start is ~0 — pinning the resume marker to the chapter's
+        // FIRST sentence while the centre sat ~700pt lower (measured ce-01).
+        //
+        // Emitted on the SETTLE channel deliberately: this is an authoritative
+        // AT-REST centre (the loop above has finished converging and any
+        // animated setContentOffset has been awaited), and consumers gate
+        // follow-detach on scrollMove only, never on scrollSettle — so an
+        // emission here cannot spuriously detach a listening reader.
+        //
+        // Placed only on the FINAL landing, never on the `provisional`
+        // early-returns above: those are mid-convergence positions the retry
+        // loop is about to refine, and emitting them would publish a centre
+        // the reader is still moving away from.
+        aanelEmitCentreLocator(noteName: "AanelRulla.scrollSettle")
         return true
     }
 
