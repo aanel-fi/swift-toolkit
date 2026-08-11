@@ -591,6 +591,65 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         return view
     }
 
+    // aanel: group-name prefixes the app applies its read-along decorations
+    // under. `aanelResumeGroupPrefix` is a narrowing of `aanelReadAlongPrefix`,
+    // so order matters when testing a key: check resume first.
+    static let aanelReadAlongPrefix = "read-along-"
+    static let aanelResumeGroupPrefix = "read-along-resume-"
+
+    /// aanel: the read-along decoration a mode-switch reload should restore to.
+    ///
+    /// The app applies up to EIGHT `read-along-*` groups at once: one per
+    /// enabled highlight variant for the ACTIVE narrated sentence, plus — only
+    /// while the reader has scrolled away from the narration (follow detached)
+    /// — one per variant for the RESUME-preview marker. Every variant within a
+    /// family carries the same locator, so the only decision that changes the
+    /// answer is which FAMILY.
+    ///
+    /// `decorations` is a Dictionary, so reading `.first` picked a family by
+    /// hash order: a Sivut<->Rulla flip while detached and playing restored to
+    /// the narrated sentence on some runs and to the on-screen marker on
+    /// others (shipped in the mode-switch restore, found by code reading
+    /// 2026-08-10).
+    ///
+    /// The resume marker exists ONLY while detached and is derived from the
+    /// viewport centre, so it IS the sentence the reader is looking at, and it
+    /// outranks the narrated sentence they deliberately scrolled away from.
+    /// Attached, no resume group exists and the active sentence — the one the
+    /// view is following — is the on-screen one and wins. Sorting by key keeps
+    /// the within-family pick deterministic too.
+    ///
+    /// Deliberately NOT a distance-to-viewport-centre measure, which is what
+    /// "the on-screen one wins" really means: decoration locators reach the
+    /// navigator text-anchor-only (`href` + `text`, no `locations` — the app
+    /// must not put a progression on them or view-following breaks), and
+    /// `normalizeLocator` adds no geometry, so a decoration has no position to
+    /// measure. Resolving its text anchor to a y offset needs an async
+    /// web-view round trip, which this synchronous pre-swap capture cannot
+    /// make. The family rule reaches the answer the measurement would.
+    ///
+    /// Returns nil when the chosen family's locator carries no text anchor:
+    /// the reload's anchor retry has nothing to centre, so the caller's
+    /// geometric fallback is the better restore. It deliberately does not fall
+    /// through to the other family — for a detached reader that other family
+    /// is the narration, i.e. the yank this rule exists to prevent.
+    static func aanelReadAlongRestoreLocator(
+        in decorations: [DecorationGroup: [DiffableDecoration]]
+    ) -> Locator? {
+        let readAlong = decorations
+            .filter { $0.key.hasPrefix(aanelReadAlongPrefix) && !$0.value.isEmpty }
+            .sorted { $0.key < $1.key }
+        let chosen = readAlong.first { $0.key.hasPrefix(aanelResumeGroupPrefix) }
+            ?? readAlong.first
+        guard
+            let locator = chosen?.value.first?.decoration.locator,
+            locator.text.highlight != nil
+        else {
+            return nil
+        }
+        return locator
+    }
+
     private func invalidatePaginationView() {
         guard isViewLoaded else {
             return
@@ -628,10 +687,10 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             // swap and racing native state it cannot observe — consumed by
             // the old container, fired over a settling surface, etc.)
             // Otherwise: the last settled on-screen location, geometric.
-            let readAlongSentence = decorations
-                .first { $0.key.hasPrefix("read-along-") && !$0.value.isEmpty }?
-                .value.first?.decoration.locator
-            let sentenceTarget = readAlongSentence?.text.highlight != nil ? readAlongSentence : nil
+            //
+            // WHICH read-along decoration — the reader is looking at one of
+            // them, not all eight — is aanelReadAlongRestoreLocator's job.
+            let sentenceTarget = Self.aanelReadAlongRestoreLocator(in: decorations)
             aanelPendingReloadLocation = sentenceTarget ?? aanelLastSettledLocation ?? currentLocation
         }
 
