@@ -903,6 +903,31 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
     private func aanelEmitPageCentreLocator() {
         guard scrollMode == .paginated, isSpreadLoaded else { return }
+
+        // **Only the spread the reader is actually looking at may answer.**
+        //
+        // The continuous surface has one scroll view and one emitter, so there
+        // is no question of which view speaks. A paginated container holds
+        // several spread views at once — the current resource plus the
+        // preloaded neighbours — and every one of them loads, lays out, and
+        // fires `spreadDidLoad` / `notifyPagesDidChange` of its own. Left
+        // ungated, the neighbours emit centres for pages nobody is on, and the
+        // last writer wins: measured on the sim 2026-08-18, a Rulla→Sivut flip
+        // produced the correct centre for resource -16 and then two more, for
+        // -17 at progression 0.01 and -15 at 0.98, in the same 800 ms. The
+        // reader had not moved; the answer had.
+        //
+        // Tested in WINDOW space rather than against the container, because a
+        // spread view has no reference to whatever is paginating it: is the
+        // centre of the screen inside this view? Off-screen neighbours are laid
+        // out to the sides, so it is not, and they fall silent. It also
+        // survives a mid-animation frame honestly — during a page turn the
+        // window centre crosses into the incoming spread exactly when that
+        // spread becomes the answer.
+        guard let window = window else { return }
+        let windowCentre = CGPoint(x: window.bounds.midX, y: window.bounds.midY)
+        guard bounds.contains(convert(windowCentre, from: window)) else { return }
+
         let link = spread.first.link
         webView.evaluateJavaScript(Self.aanelPageCentreJS) { result, _ in
             guard
