@@ -547,6 +547,12 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         documentHeightTask?.cancel()
         documentHeightTask = nil
 
+        // aanel-settle-paginated: a spread view is recycled across resources,
+        // so a pending emission would describe the document this view has just
+        // stopped showing.
+        aanelPageCentreWorkItem?.cancel()
+        aanelPageCentreWorkItem = nil
+
         // Clean up go to continuations.
         for continuation in goToContinuations {
             continuation.resume()
@@ -794,6 +800,142 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
     }
     // aanel-settle-continuous-end
 
+    // aanel-settle-paginated-begin
+    /// aanel: **page-centre** locator emitter for PAGINATED (Sivut) mode —
+    /// Phase 2 step 2b of the reader native migration
+    /// (`docs/architecture/reader-native-migration.md`, contract §3.2).
+    ///
+    /// The continuous (Rulla) emitter above answers "what is at the centre of
+    /// the viewport" for a scrolling surface. A paginated surface had no such
+    /// answer at all, and that absence is a shipped defect rather than a gap:
+    /// the only position a paginated navigator exposes is `currentLocator`,
+    /// whose progression is the page *start*. A reader flipping Sivut↔Rulla
+    /// therefore had the two surfaces resolve the read-along resume marker from
+    /// two different reference points — centre one way, page-top the other —
+    /// and the legs do not cancel, so a round trip walked backwards by roughly
+    /// two thirds of a viewport (`docs/requirements/reader-epub.md`, Known
+    /// issues → mode-switch marker drift). It is unfixable above this layer
+    /// because nothing above this layer can see the centre of a page.
+    ///
+    /// Deliberately mirrors the continuous emitter's contract rather than
+    /// inventing a second one: a serialized `Locator` posted on a
+    /// `NotificationCenter` name, carrying
+    ///   * `locations.progression` — the **geometric centre** of the visible
+    ///     page, always present, and
+    ///   * `text.highlight` — the sentence snippet under the centre, when a
+    ///     caret hit-test finds a real text node.
+    /// The two are separate answers on purpose (contract §3.2): the centre may
+    /// legitimately be an image, a heading or a paragraph gap, and a consumer
+    /// that only had the snippet would go blind exactly there.
+    ///
+    /// **The whole probe is one `evaluateJavaScript` round trip, and both
+    /// answers come from the same frame.** The Swift side already keeps a
+    /// `progression` range for the page (`first ... last`, published by
+    /// `readium-reflowable`'s scroll handler), and its midpoint is the same
+    /// number — but it is refreshed asynchronously, so pairing a *stored*
+    /// progression with a *live* hit-test can describe two different pages
+    /// during a turn. Computing both in the page removes that skew by
+    /// construction. It also mirrors upstream's own formula, including the RTL
+    /// `abs(scrollX)` correction, so the centre cannot disagree with the
+    /// navigator about which page it is on.
+    ///
+    /// The vertical fan-out repeats the continuous emitter's lesson: a bare
+    /// centre probe lands in a paragraph gap or a margin often enough that the
+    /// marker would blink out mid-chapter, so the probe walks outward from the
+    /// centre (closest first) and takes the first real text node. The fan is
+    /// vertical only — horizontally the centre of a single-column page is
+    /// always inside the text block.
+    static let pageCentreNotificationName = "AanelSivut.pageCentre"
+
+    private var aanelPageCentreWorkItem: DispatchWorkItem?
+
+    /// Coalesced request for a page-centre emission.
+    ///
+    /// Debounced rather than immediate because the two callers fire in bursts:
+    /// a page turn produces a settle *and* a re-layout, and a mode-switch
+    /// restore produces a load followed by its own `go(to:)`. Only the last
+    /// one describes where the reader ended up.
+    func aanelSchedulePageCentreEmit(delay: TimeInterval = 0.12) {
+        guard scrollMode == .paginated else { return }
+        aanelPageCentreWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.aanelEmitPageCentreLocator()
+        }
+        aanelPageCentreWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Caret-on-text-node only, exactly like the continuous probe's strict
+    /// form: `elementFromPoint` returns `body` in a gap, whose `textContent`
+    /// head is the *chapter opening* — a snippet that reads plausible and
+    /// points at the wrong place. An empty snippet with a good progression is
+    /// the honest answer, and the consumer falls back to it cleanly.
+    private static let aanelPageCentreJS = """
+    (function(){
+      var root = document.scrollingElement;
+      if (!root) { return ""; }
+      var w = window.innerWidth, h = window.innerHeight;
+      var total = root.scrollWidth;
+      if (!(total > 0) || !(w > 0) || !(h > 0)) { return ""; }
+      var x = window.scrollX;
+      if (x < 0) { x = -x; }
+      var p = (x + w / 2) / total;
+      if (p < 0) { p = 0; }
+      if (p > 1) { p = 1; }
+      var s = "";
+      if (document.caretRangeFromPoint) {
+        var fr = [0, 0.06, -0.06, 0.12, -0.12, 0.19, -0.19, 0.27, -0.27, 0.35, -0.35];
+        for (var i = 0; i < fr.length && !s; i++) {
+          var y = h / 2 + fr[i] * h;
+          if (y < 0 || y > h) { continue; }
+          var r = document.caretRangeFromPoint(w / 2, y);
+          var n = r && r.startContainer;
+          if (n && n.nodeType === 3 && (n.textContent || "").trim()) {
+            var t = n.textContent || "";
+            var o = r.startOffset || 0;
+            s = t.substring(Math.max(0, o - 30), o + 80);
+          }
+        }
+      }
+      return JSON.stringify({ s: s, p: p });
+    })()
+    """
+
+    private func aanelEmitPageCentreLocator() {
+        guard scrollMode == .paginated, isSpreadLoaded else { return }
+        let link = spread.first.link
+        webView.evaluateJavaScript(Self.aanelPageCentreJS) { result, _ in
+            guard
+                let json = result as? String,
+                let data = json.data(using: .utf8),
+                let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let progression = payload["p"] as? Double
+            else {
+                return
+            }
+            let snippet = ((payload["s"] as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            var locations = Locator.Locations()
+            locations.progression = min(max(progression, 0), 1)
+            let locator = Locator(
+                href: link.url(),
+                mediaType: link.mediaType ?? .xhtml,
+                locations: locations,
+                // Absent, not empty: an empty highlight is a *value* the
+                // consumer would have to special-case, and `Locator.Text`
+                // already models "no text" as nil.
+                text: snippet.isEmpty ? Locator.Text() : Locator.Text(highlight: snippet)
+            )
+            guard let locatorJSON = try? locator.jsonString() else { return }
+            NotificationCenter.default.post(
+                name: Notification.Name(EPUBReflowableSpreadView.pageCentreNotificationName),
+                object: nil,
+                userInfo: ["locatorJSON": locatorJSON]
+            )
+        }
+    }
+    // aanel-settle-paginated-end
+
     override func spreadDidLoad() async {
         let link = spread.first.link
         if let linkJSON = try? link.jsonString() {
@@ -823,6 +965,13 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
         let location = pendingLocation
         await go(to: location.location, animated: location.animated)
+
+        // aanel-settle-paginated: the first centre answer for this spread.
+        // `notifyPagesDidChange` alone is not enough — it early-returns when
+        // the progression range has not *changed*, which is exactly the case
+        // for a spread that loads already showing page 1 (an opening, or a
+        // mode-switch restore that lands at a resource start).
+        aanelSchedulePageCentreEmit()
 
         // The rendering is sometimes very slow. So in case we don't show the first page of the resource, we add
         // a generous delay before showing the spread again.
@@ -1267,6 +1416,10 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
         scrollDidEnd()
         delegate?.spreadViewPagesDidChange(self)
+        // aanel-settle-paginated: the page under the reader changed and has
+        // stopped moving — re-measure the centre. This is the paginated
+        // analogue of the continuous surface's settle work item.
+        aanelSchedulePageCentreEmit()
     }
 
     // MARK: - Scripts
