@@ -377,10 +377,20 @@ open class EPUBNavigatorViewController: InputObservableViewController,
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        // aanel: block-based observers are keyed by their token, not by
+        // `self`, so `removeObserver(self)` above does not reach them.
+        for token in aanelCentreObserverTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 
     override open func viewDidLoad() {
         super.viewDidLoad()
+
+        // aanel (step 2c): start retaining the centre answer, so a container
+        // swap has a centre-referenced restore target — see
+        // `aanelLastCentreLocation`.
+        aanelObserveCentreLocators()
 
         // Will call `accessibilityScroll()` when VoiceOver reaches the end of
         // the current resource. We can use this to go to the next resource.
@@ -650,6 +660,52 @@ open class EPUBNavigatorViewController: InputObservableViewController,
         return locator
     }
 
+    /// aanel: the locator a container swap restores to — step 2c.
+    ///
+    /// Two answers about the same place, and neither is sufficient alone:
+    ///
+    /// - the **sentence** anchor is exact but is a `textOnlyLocator` by
+    ///   construction (a progression on a decoration breaks view-following), so
+    ///   when the text-anchor search misses on a just-reloaded webview there is
+    ///   nothing to fall back to — the paginated surface then stays where the
+    ///   reload put it, at the resource start.
+    /// - the **centre** is always available and never misses, but it is a
+    ///   geometric estimate.
+    ///
+    /// So the restore carries both: the anchor to land on, and the centre as
+    /// the fallback the anchor path lacked. Attaching `locations.progression`
+    /// does not disable the anchor search — `rangeFromLocator` and
+    /// `rectFromLocator` both test `text.highlight` *first*, and it is
+    /// `cssSelector` / `fragments` / `position` that would divert them
+    /// (contract Appendix gap 25).
+    ///
+    /// The centre only joins a sentence from the **same resource**; across a
+    /// chapter seam the two legitimately name adjacent ones (`read-along.md`
+    /// FR-RA-11.7b), and a progression from the neighbour would be a fallback
+    /// pointing at the wrong document.
+    static func aanelRestoreTarget(sentence: Locator?, centre: Locator?) -> Locator? {
+        guard let sentence else { return centre }
+        guard
+            let centre,
+            let progression = centre.locations.progression,
+            aanelHREFMatches(sentence.href.string, centre.href.string)
+        else {
+            return sentence
+        }
+        var merged = sentence
+        merged.locations.progression = progression
+        return merged
+    }
+
+    /// aanel: href comparison as every read-along path does it — exact, or
+    /// either side a suffix of the other. A decoration's href comes from the
+    /// app's sidecar and a centre's from the reading order's own link, and the
+    /// two carry different amounts of the container path.
+    static func aanelHREFMatches(_ a: String, _ b: String) -> Bool {
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        return a == b || a.hasSuffix(b) || b.hasSuffix(a)
+    }
+
     private func invalidatePaginationView() {
         guard isViewLoaded else {
             return
@@ -686,12 +742,17 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             // (Every previous recovery design had JS re-following after the
             // swap and racing native state it cannot observe — consumed by
             // the old container, fired over a settling surface, etc.)
-            // Otherwise: the last settled on-screen location, geometric.
+            // Otherwise: the CENTRE of what the reader could see — see
+            // `aanelLastCentreLocation` for why the settled location is the
+            // wrong reference and is now only the last resort.
             //
             // WHICH read-along decoration — the reader is looking at one of
             // them, not all eight — is aanelReadAlongRestoreLocator's job.
             let sentenceTarget = Self.aanelReadAlongRestoreLocator(in: decorations)
-            aanelPendingReloadLocation = sentenceTarget ?? aanelLastSettledLocation ?? currentLocation
+            aanelPendingReloadLocation = Self.aanelRestoreTarget(
+                sentence: sentenceTarget,
+                centre: aanelLastCentreLocation
+            ) ?? aanelLastSettledLocation ?? currentLocation
         }
 
         if containerNeedsReplacement {
@@ -800,6 +861,63 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     // trustworthy "where the reader really is" during playback, when
     // currentLocation is routinely a progression-0 text-anchor jump target.
     private var aanelLastSettledLocation: Locator?
+
+    /// aanel: the last CENTRE-of-viewport answer either surface reported, kept
+    /// as a restore target — reader native migration Phase 2 step 2c.
+    ///
+    /// **Why a second "where is the reader" locator.** `aanelLastSettledLocation`
+    /// and `currentLocation` both describe the viewport **top** (continuous) or
+    /// the page's leading edge (paginated) — that is what a Readium location
+    /// *is*. The resume marker, since step 2b, is resolved from the **centre**.
+    /// Restoring a reload from a top-referenced locator therefore moves the
+    /// centre backwards by exactly half a viewport on every container swap, and
+    /// a Sivut↔Rulla round trip does it twice without cancelling: the measured
+    /// mode-switch marker drift (`reader-epub.md` → Known issues). Both
+    /// destinations read a progression target as a *centre*
+    /// (`EPUBReflowableSpreadView.targetYOffset` centres it; `scrollToPosition`
+    /// snaps to the page containing it), so the two references cannot be mixed.
+    ///
+    /// **Text deliberately stripped.** The emitters' `text.highlight` is a
+    /// ~110-character window around the caret, cut mid-word at both ends — it is
+    /// a *snippet*, built to be matched against a sidecar sentence, not a text
+    /// anchor to navigate to. Handed to `go(to:)` it would take the anchor-search
+    /// path (`locator.text.highlight != nil`) and a fuzzy mid-word match landing
+    /// somewhere else is worse than the geometric answer this locator already
+    /// carries. Keep `href` + `progression`, which is exactly the centre answer.
+    private var aanelLastCentreLocation: Locator?
+
+    /// aanel: observers for the two centre channels (step 2c). Both post the
+    /// same shape; which surface spoke does not matter here, only that it was
+    /// the last measurement of where the reader's eye was.
+    private func aanelObserveCentreLocators() {
+        for name in [
+            "AanelRulla.scrollSettle",
+            EPUBReflowableSpreadView.pageCentreNotificationName,
+        ] {
+            let token = NotificationCenter.default.addObserver(
+                forName: Notification.Name(name), object: nil, queue: .main
+            ) { [weak self] note in
+                guard
+                    let self,
+                    let json = note.userInfo?["locatorJSON"] as? String,
+                    let locator = try? Locator(jsonString: json),
+                    let progression = locator.locations.progression
+                else {
+                    return
+                }
+                var locations = Locator.Locations()
+                locations.progression = progression
+                self.aanelLastCentreLocation = Locator(
+                    href: locator.href,
+                    mediaType: locator.mediaType,
+                    locations: locations
+                )
+            }
+            aanelCentreObserverTokens.append(token)
+        }
+    }
+
+    private var aanelCentreObserverTokens: [any NSObjectProtocol] = []
 
     private func _reloadSpreads() {
         let locator = aanelPendingReloadLocation ?? aanelLastSettledLocation ?? currentLocation

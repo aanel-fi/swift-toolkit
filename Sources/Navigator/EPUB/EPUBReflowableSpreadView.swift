@@ -1335,7 +1335,19 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         }
 
         if locator.text.highlight != nil {
-            return await scroll(toLocator: locator, animated: animated)
+            let ok = await scroll(toLocator: locator, animated: animated)
+            // aanel (step 2c): a text anchor that does not resolve used to end
+            // here, leaving the spread wherever the load put it — page 1 of the
+            // resource. On a mode-switch restore that is a visible jump to the
+            // chapter start, and it is precisely the failure the JS retry loop
+            // in `ReadiumEngine` existed to paper over. The restore locator now
+            // carries the centre progression alongside its anchor
+            // (`EPUBNavigatorViewController.aanelRestoreTarget`), so there is a
+            // real second answer to fall back to.
+            if !ok, let progression = locator.locations.progression {
+                return await scroll(toProgression: progression, animated: animated)
+            }
+            return ok
             // TODO: find the first fragment matching a tag ID (need a regex)
         } else if let id = locator.locations.fragments.first, !id.isEmpty {
             return await scroll(toTagID: id, animated: animated)
