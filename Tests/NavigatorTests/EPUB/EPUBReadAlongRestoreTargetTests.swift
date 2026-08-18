@@ -110,10 +110,10 @@ struct EPUBReadAlongRestoreTargetTests {
     @Test("an unanchored resume marker falls through to the geometric restore, not to the narration")
     func unanchoredResumeMarkerYieldsNoTarget() {
         // Highlight-less locators cannot be centred by the reload's anchor
-        // retry. Returning nil hands the restore to aanelLastSettledLocation —
-        // roughly where the reader is. Falling back to the ACTIVE family
-        // instead would yank a detached reader to the narration, the very
-        // defect this rule exists to prevent.
+        // retry. Returning nil hands the restore to the centre answer (step
+        // 2c) — where the reader was looking. Falling back to the ACTIVE
+        // family instead would yank a detached reader to the narration, the
+        // very defect this rule exists to prevent.
         let decorations = activeGroups().merging(resumeGroups(highlight: nil)) { a, _ in a }
         #expect(restoreTarget(decorations) == nil)
     }
@@ -132,5 +132,85 @@ struct EPUBReadAlongRestoreTargetTests {
         for _ in 0 ..< 50 {
             #expect(restoreTarget(decorations)?.text.highlight == "bg-yellow")
         }
+    }
+}
+
+/// aanel: pairing the restore's sentence anchor with the centre answer —
+/// reader native migration Phase 2 step 2c.
+///
+/// The drift these cover is a **reference-point** bug, not a landing one. A
+/// Readium location names the viewport TOP (Rulla) or the page's leading edge
+/// (Sivut); the resume marker has been resolved from the CENTRE since step 2b;
+/// and both surfaces read a progression target as a centre. Restoring from a
+/// top-referenced locator therefore moved the reader back half a viewport per
+/// container swap, twice per Sivut↔Rulla round trip, without cancelling.
+@Suite("Restore target: sentence anchor + centre fallback")
+struct EPUBRestoreTargetTests {
+    private func centre(href: String, progression: Double) -> Locator {
+        var locations = Locator.Locations()
+        locations.progression = progression
+        return Locator(href: AnyURL(string: href)!, mediaType: .xhtml, locations: locations)
+    }
+
+    @Test("a sentence keeps its anchor AND gains the centre's progression")
+    func sentenceGainsCentreProgression() {
+        let merged = EPUBNavigatorViewController.aanelRestoreTarget(
+            sentence: makeLocator(href: "chapter5.xhtml", highlight: "the on-screen sentence"),
+            centre: centre(href: "chapter5.xhtml", progression: 0.42)
+        )
+        // Both halves, or the merge is pointless: the anchor is what lands the
+        // restore exactly, the progression is the fallback when it misses.
+        #expect(merged?.text.highlight == "the on-screen sentence")
+        #expect(merged?.locations.progression == 0.42)
+    }
+
+    @Test("hrefs are matched by suffix, since sidecar and reading-order forms differ")
+    func hrefSuffixMatch() {
+        let merged = EPUBNavigatorViewController.aanelRestoreTarget(
+            sentence: makeLocator(href: "chapter5.xhtml", highlight: "sentence"),
+            centre: centre(href: "OEBPS/chapter5.xhtml", progression: 0.42)
+        )
+        #expect(merged?.locations.progression == 0.42)
+    }
+
+    @Test("a centre in a DIFFERENT resource is not attached")
+    func centreFromAnotherResourceIsRejected() {
+        // At a chapter seam on the continuous surface the centre and the
+        // decorated sentence legitimately name adjacent resources
+        // (read-along.md FR-RA-11.7b). A progression from the neighbour would
+        // be a fallback pointing into the wrong document.
+        let merged = EPUBNavigatorViewController.aanelRestoreTarget(
+            sentence: makeLocator(href: "chapter5.xhtml", highlight: "sentence"),
+            centre: centre(href: "chapter6.xhtml", progression: 0.42)
+        )
+        #expect(merged?.text.highlight == "sentence")
+        #expect(merged?.locations.progression == nil)
+    }
+
+    @Test("with no sentence the centre IS the restore target")
+    func centreAloneIsTheTarget() {
+        // The no-read-along case: plain reading, or every highlight variant
+        // switched off. Before 2c this fell to the settled location, which is
+        // the top-referenced answer the drift came from.
+        let target = EPUBNavigatorViewController.aanelRestoreTarget(
+            sentence: nil,
+            centre: centre(href: "chapter5.xhtml", progression: 0.42)
+        )
+        #expect(target?.locations.progression == 0.42)
+        #expect(target?.text.highlight == nil)
+    }
+
+    @Test("with neither, there is no target and the caller falls through")
+    func noSentenceNoCentre() {
+        #expect(EPUBNavigatorViewController.aanelRestoreTarget(sentence: nil, centre: nil) == nil)
+    }
+
+    @Test("a centre carrying no progression is not attached")
+    func centreWithoutProgressionIsIgnored() {
+        let merged = EPUBNavigatorViewController.aanelRestoreTarget(
+            sentence: makeLocator(href: "chapter5.xhtml", highlight: "sentence"),
+            centre: Locator(href: AnyURL(string: "chapter5.xhtml")!, mediaType: .xhtml)
+        )
+        #expect(merged?.locations.progression == nil)
     }
 }
