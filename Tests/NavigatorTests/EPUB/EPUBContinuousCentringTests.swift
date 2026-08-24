@@ -98,33 +98,59 @@ struct EPUBContinuousCentringTests {
         #expect(Self.target(rectTop: 100) == 0)
     }
 
+    /// The inset geometries `aanelContinuousInsets` actually produces. Only
+    /// the FIRST resource keeps a top inset and only the LAST keeps a bottom
+    /// one — every interior resource gets both zeroed, and interior resources
+    /// are exactly the chapters this fix is about.
+    struct InsetGeometry: Sendable, CustomStringConvertible {
+        let top: CGFloat
+        let bottom: CGFloat
+        let description: String
+    }
+
+    static let insetGeometries: [InsetGeometry] = [
+        // The case that matters: both insets zero, so the entire safety margin
+        // is `viewportHeight / 4` and `insetBottom` contributes nothing to it.
+        InsetGeometry(top: 0, bottom: 0, description: "interior resource"),
+        InsetGeometry(top: 60, bottom: 0, description: "first resource"),
+        InsetGeometry(top: 0, bottom: 60, description: "last resource"),
+        InsetGeometry(top: 60, bottom: 60, description: "single-resource book"),
+    ]
+
     /// The invariant that makes dropping the upper bound safe:
     /// `ContinuousPaginationView.updateCurrentIndexFromViewport` resolves the
     /// index from `contentOffset.y + 1`, so as long as the target stays below
     /// this resource's `pageHeight`, `currentIndex` cannot flip forward and the
     /// `crossChapter` classification the detach logic depends on is preserved.
     ///
-    /// Worst case is an anchor at the very bottom of the document.
+    /// Worst case is an anchor at the very bottom of the document. Swept across
+    /// every inset geometry because the margin is NOT uniform: on an interior
+    /// resource it is only `viewportHeight / 4`.
     @Test(
-        "the viewport top stays inside the resource for any viewport and sentence size",
-        arguments: [CGFloat(320), 480, 800, 1200], [CGFloat(0), 18, 40, 400, 5000]
+        "the viewport top stays inside the resource for any viewport and inset geometry",
+        arguments: [CGFloat(320), 480, 800, 1200], insetGeometries
     )
-    func viewportTopStaysInsideTheResource(viewportHeight: CGFloat, rectHeight: CGFloat) {
+    func viewportTopStaysInsideTheResource(viewportHeight: CGFloat, insets: InsetGeometry) {
         let documentHeight = Self.documentHeight
-        let pageHeight = Self.insetTop + documentHeight + Self.insetBottom
+        let pageHeight = insets.top + documentHeight + insets.bottom
 
-        let target = EPUBReflowableSpreadView.aanelCentredYOffset(
-            rectTop: documentHeight,
-            rectHeight: rectHeight,
-            viewportHeight: viewportHeight,
-            insetTop: Self.insetTop
-        )
+        // A sentence at least half a viewport tall maximises the target, and
+        // so is the worst case; the shorter ones must also hold.
+        for rectHeight in [CGFloat(0), 18, 40, 400, 5000] {
+            let target = EPUBReflowableSpreadView.aanelCentredYOffset(
+                rectTop: documentHeight,
+                rectHeight: rectHeight,
+                viewportHeight: viewportHeight,
+                insetTop: insets.top
+            )
 
-        // `updateCurrentIndexFromViewport` probes at `contentOffset.y + 1`.
-        #expect(target + 1 < pageHeight)
+            // `updateCurrentIndexFromViewport` probes at `contentOffset.y + 1`.
+            #expect(target + 1 < pageHeight)
 
-        // The proof's stated margin: at least viewportHeight / 4 + insetBottom.
-        #expect(target <= Self.insetTop + documentHeight - viewportHeight / 4)
+            // The margin the safety proof claims, with insetBottom excluded —
+            // on an interior resource it is zero and cannot be leaned on.
+            #expect(target <= insets.top + documentHeight - viewportHeight / 4)
+        }
     }
 
     /// ...and the target really does need to exceed the old bound for a large
