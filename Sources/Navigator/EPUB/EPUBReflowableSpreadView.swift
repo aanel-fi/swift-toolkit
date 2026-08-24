@@ -1212,7 +1212,10 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
     ///
     /// while `preferredHeight == insetTop + documentHeight + insetBottom`, so
     /// the target stays below this resource's end by at least
-    /// `viewportHeight / 4 + insetBottom`. (`rectTop <= documentHeight` because
+    /// `viewportHeight / 4 + insetBottom`. Note `aanelContinuousInsets` zeroes
+    /// BOTH insets on every interior resource, so for the chapters this matters
+    /// for the margin is exactly `viewportHeight / 4` — small, but positive and
+    /// independent of the document's height. (`rectTop <= documentHeight` because
     /// `locatorYOffset` and `updateDocumentHeight` read the same laid-out
     /// document through `readiumContinuous`.)
     ///
