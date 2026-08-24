@@ -9,7 +9,7 @@ import ReadiumShared
 import Testing
 import UIKit
 
-@Suite struct ContinuousPaginationViewTests {
+struct ContinuousPaginationViewTests {
     @MainActor
     @Test("goToIndex end aligns the trailing edge of a tall page")
     func goToIndexEnd() async {
@@ -86,17 +86,58 @@ import UIKit
         #expect(paginationView.currentIndex == 1)
     }
 
+    /// aanel: the container half of the "centring may cross a seam" invariant.
+    /// A page view is allowed to return a target BEYOND its own
+    /// `pageHeight - viewportHeight` — that is what
+    /// `EPUBReflowableSpreadView.aanelCentredYOffset` does for a sentence in
+    /// the last half-viewport of a chapter. The container must scroll there
+    /// (so the seam moves up and the next resource shows below) WITHOUT
+    /// advancing `currentIndex`, because the viewport top is still inside the
+    /// resource and the read-along detach logic keys off that index.
+    @MainActor
+    @Test("a target past the page's own height scrolls across the seam without advancing the index")
+    func targetPastPageHeightCrossesTheSeam() async {
+        let delegate = TestPaginationDelegate(
+            pageHeights: [1000, 1000, 1000],
+            locatorTargetOffset: 900
+        )
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 500)
+        )
+
+        paginationView.reloadAtIndex(1, location: .start, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        // 900 is past this page's own bound (1000 - 500 = 500), so the old
+        // per-resource clamp would have produced 500 -> absolute 1500.
+        let locator = Locator(href: AnyURL(string: "chapter2.xhtml")!, mediaType: .xhtml)
+        let didJump = await paginationView.goToIndex(1, location: .locator(locator), options: .none)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(didJump)
+        // Page 1 starts at 1000, so the surface sits at 1000 + 900.
+        #expect(abs(paginationView.viewportRect.minY - 1900) < 0.5)
+        // The viewport top (1900, probed at 1901) is still inside page 1,
+        // which ends at 2000.
+        #expect(paginationView.currentIndex == 1)
+    }
+
     @MainActor
     @Test(
         "locator jumps wait briefly for delayed target offsets",
         .disabled("""
-        aanel: quarantined, not deleted. Written against the PR #766 spike and \
-        never compiled since (a `Locator(href: String)` that no longer type-checks \
-        kept the whole ReadiumNavigatorTests target from building, so no navigator \
-        test has run on this branch). With that line repaired it builds but fails: \
-        goToIndex now reports FAILURE for a provisional landing whose text anchor \
-        has not resolved, which is the aanel convergence contract, not a defect. \
-        Re-express the expectation against that contract before re-enabling.
+        aanel: quarantined, not deleted. Two separate reasons, both real. (1) It \
+        asserts `didJump == true`, but goToIndex now reports FAILURE for a \
+        provisional landing whose text anchor has not resolved — that is the aanel \
+        convergence contract, not a defect. (2) Until 2026-08 it could not have \
+        tested anything either way: `TestContinuousPageView` declared a \
+        2-argument `targetYOffset(for:viewportHeight:)` that did not witness the \
+        3-argument `ContinuousPageView` requirement, so the protocol extension's \
+        nil-returning default ran instead and both `locatorTargetOffset` and \
+        `locatorFailuresBeforeSuccess` were inert. The stub is now a real witness, \
+        so re-expressing this against the convergence contract is finally \
+        worthwhile — do that before re-enabling.
         """)
     )
     func locatorJumpWaitsForDelayedOffset() async {
@@ -203,7 +244,14 @@ private final class TestContinuousPageView: UIView, ContinuousPageView {
         height
     }
 
-    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat) async -> CGFloat? {
+    // aanel: this MUST carry `nearY:` to satisfy `ContinuousPageView`. Until
+    // 2026-08 it declared a 2-argument `targetYOffset(for:viewportHeight:)`,
+    // which witnesses nothing — the protocol extension's default (returning
+    // nil) was what the container actually called, so this entire body, the
+    // `locatorTargetOffset` fixture and the `locatorFailuresBeforeSuccess`
+    // fixture were dead code and no test in the repo ever drove a page view's
+    // target-offset path.
+    func targetYOffset(for location: PageLocation, viewportHeight: CGFloat, nearY: CGFloat?) async -> CGFloat? {
         switch location {
         case .start:
             return 0

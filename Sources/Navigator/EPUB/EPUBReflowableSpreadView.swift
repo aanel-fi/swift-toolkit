@@ -21,502 +21,502 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
     private static let reflowableScript = loadScript(named: "readium-reflowable")
     private static let continuousScript = """
-        (function () {
-          if (window.readiumContinuous) {
-            return;
+    (function () {
+      if (window.readiumContinuous) {
+        return;
+      }
+
+      function escapeCssIdentifier(value) {
+        if (window.CSS && typeof window.CSS.escape === "function") {
+          return window.CSS.escape(value);
+        }
+        return String(value).replace(/([^a-zA-Z0-9_-])/g, "\\\\$1");
+      }
+
+      function cssSelectorForElement(element) {
+        if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+          return "body";
+        }
+
+        if (element.id) {
+          return "#" + escapeCssIdentifier(element.id);
+        }
+
+        var segments = [];
+        var current = element;
+        while (current && current.nodeType === Node.ELEMENT_NODE && current !== document.documentElement) {
+          var selector = current.nodeName.toLowerCase();
+          if (current.id) {
+            selector += "#" + escapeCssIdentifier(current.id);
+            segments.unshift(selector);
+            break;
           }
 
-          function escapeCssIdentifier(value) {
-            if (window.CSS && typeof window.CSS.escape === "function") {
-              return window.CSS.escape(value);
+          var position = 1;
+          var sibling = current.previousElementSibling;
+          while (sibling) {
+            if (sibling.nodeName === current.nodeName) {
+              position += 1;
             }
-            return String(value).replace(/([^a-zA-Z0-9_-])/g, "\\\\$1");
+            sibling = sibling.previousElementSibling;
           }
 
-          function cssSelectorForElement(element) {
-            if (!element || element.nodeType !== Node.ELEMENT_NODE) {
-              return "body";
-            }
+          selector += ":nth-of-type(" + position + ")";
+          segments.unshift(selector);
+          current = current.parentElement;
+        }
 
-            if (element.id) {
-              return "#" + escapeCssIdentifier(element.id);
-            }
+        if (segments.length === 0) {
+          return "body";
+        }
+        return segments.join(" > ");
+      }
 
-            var segments = [];
-            var current = element;
-            while (current && current.nodeType === Node.ELEMENT_NODE && current !== document.documentElement) {
-              var selector = current.nodeName.toLowerCase();
-              if (current.id) {
-                selector += "#" + escapeCssIdentifier(current.id);
-                segments.unshift(selector);
+      function makeRectJSON(rect) {
+        return {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          left: rect.left,
+        };
+      }
+
+      function rangeForTextNormalized(searchRoot, target, before, after, nearY) {
+        var walker = document.createTreeWalker(searchRoot, NodeFilter.SHOW_TEXT, null);
+        var nodes = [];
+        var total = 0;
+        var node;
+        while ((node = walker.nextNode())) {
+          var raw = node.textContent || "";
+          if (!raw) { continue; }
+          nodes.push({ node: node, start: total, raw: raw });
+          total += raw.length;
+        }
+        if (nodes.length === 0) { return null; }
+        var full = "";
+        for (var i = 0; i < nodes.length; i += 1) { full += nodes[i].raw; }
+        var norm = "";
+        var map = [];
+        var lastSpace = true;
+        for (var j = 0; j < full.length; j += 1) {
+          var ch = full[j];
+          if (ch === "\\u00AD") { continue; }
+          if (/[\\u2010-\\u2015\\u2212]/.test(ch)) { ch = "-"; }
+          if (/\\s/.test(ch)) {
+            if (lastSpace) { continue; }
+            norm += " ";
+            map.push(j);
+            lastSpace = true;
+          } else {
+            norm += ch;
+            map.push(j);
+            lastSpace = false;
+          }
+        }
+        function normStr(s) {
+          return String(s || "")
+            .replace(/\\u00AD/g, "")
+            .replace(/[\\u2010-\\u2015\\u2212]/g, "-")
+            .replace(/\\s+/g, " ")
+            .trim();
+        }
+        var h = normStr(target);
+        if (!h) { return null; }
+        var b = normStr(before);
+        var a = normStr(after);
+        function occTop(occIdx) {
+          var rawIdx = map[occIdx];
+          for (var q = 0; q < nodes.length; q += 1) {
+            if (rawIdx < nodes[q].start + nodes[q].raw.length) {
+              var rr = document.createRange();
+              rr.selectNodeContents(nodes[q].node);
+              var rect = rectFromRange(rr);
+              var body = (document.body || document.documentElement).getBoundingClientRect();
+              return rect ? rect.top - body.top : 0;
+            }
+          }
+          return 0;
+        }
+        var useNear = typeof nearY === "number";
+        var best = -1;
+        var bestScore = -1;
+        var bestDist = Infinity;
+        var idx = norm.indexOf(h);
+        while (idx >= 0) {
+          var score = 0;
+          if (b && norm.slice(Math.max(0, idx - b.length - 2), idx).indexOf(b) >= 0) { score += 1; }
+          if (a && norm.slice(idx + h.length, idx + h.length + a.length + 2).indexOf(a) >= 0) { score += 1; }
+          var dist = useNear ? Math.abs(occTop(idx) - nearY) : 0;
+          if (score > bestScore || (score === bestScore && useNear && dist < bestDist)) {
+            bestScore = score;
+            bestDist = dist;
+            best = idx;
+          }
+          idx = norm.indexOf(h, idx + 1);
+        }
+        if (best < 0) { return null; }
+        var rawStart = map[best];
+        var rawEnd = map[best + h.length - 1] + 1;
+        function locate(rawIndex) {
+          for (var n = 0; n < nodes.length; n += 1) {
+            var entry = nodes[n];
+            if (rawIndex < entry.start + entry.raw.length) {
+              return { node: entry.node, offset: rawIndex - entry.start };
+            }
+          }
+          var last = nodes[nodes.length - 1];
+          return { node: last.node, offset: last.raw.length };
+        }
+        var startPos = locate(rawStart);
+        var endPos = locate(rawEnd - 1);
+        var range = document.createRange();
+        range.setStart(startPos.node, startPos.offset);
+        range.setEnd(endPos.node, endPos.offset + 1);
+        return range;
+      }
+
+      function rangeForText(root, highlight, before, after, nearY) {
+        var target = String(highlight || "").trim();
+        if (!target) {
+          return null;
+        }
+
+        var searchRoot = root || document.body;
+        var walker = document.createTreeWalker(searchRoot, NodeFilter.SHOW_TEXT, {
+          acceptNode: function (node) {
+            return node.textContent && node.textContent.trim()
+              ? NodeFilter.FILTER_ACCEPT
+              : NodeFilter.FILTER_REJECT;
+          },
+        });
+
+        var matches = [];
+        var node;
+        while ((node = walker.nextNode())) {
+          var text = node.textContent || "";
+          var index = text.indexOf(target);
+          while (index >= 0) {
+            matches.push({ node: node, index: index, text: text });
+            index = text.indexOf(target, index + 1);
+          }
+        }
+
+        if (matches.length === 0) {
+          // aanel: exact per-node match failed (footnote superscripts,
+          // typographic spaces, soft hyphens split or alter the text
+          // nodes) — fall back to a normalized cross-node search so the
+          // follow resolves everything the decoration engine can.
+          return rangeForTextNormalized(searchRoot, target, before, after, nearY);
+        }
+
+        function score(match) {
+          var points = 0;
+          if (before && match.text.slice(Math.max(0, match.index - before.length), match.index).indexOf(before) >= 0) {
+            points += 1;
+          }
+          if (after && match.text.slice(match.index + target.length, match.index + target.length + after.length).indexOf(after) >= 0) {
+            points += 1;
+          }
+          return points;
+        }
+
+        // aanel: repeated phrases used to resolve to the FIRST occurrence
+        // in the document on score ties, teleporting follows to identical
+        // sentences pages away. With a nearY hint (the current reading
+        // position), equal-scoring candidates prefer the nearest one.
+        var docTop = documentTopOffset();
+        function matchTop(m) {
+          var r = document.createRange();
+          r.setStart(m.node, m.index);
+          r.setEnd(m.node, Math.min(m.index + target.length, (m.node.textContent || "").length));
+          var rect = rectFromRange(r);
+          return rect ? rect.top - docTop : 0;
+        }
+        var useNear = typeof nearY === "number" && matches.length > 1;
+        var best = matches[0];
+        var bestScore = score(best);
+        var bestDist = useNear ? Math.abs(matchTop(best) - nearY) : 0;
+        for (var i = 1; i < matches.length; i += 1) {
+          var candidateScore = score(matches[i]);
+          if (candidateScore < bestScore) { continue; }
+          var dist = useNear ? Math.abs(matchTop(matches[i]) - nearY) : 0;
+          if (candidateScore > bestScore || (useNear && dist < bestDist)) {
+            best = matches[i];
+            bestScore = candidateScore;
+            bestDist = dist;
+          }
+        }
+
+        var range = document.createRange();
+        range.setStart(best.node, best.index);
+        range.setEnd(best.node, best.index + target.length);
+        return range;
+      }
+
+      function rectFromRange(range) {
+        if (!range) {
+          return null;
+        }
+
+        // aanel: the union box, not getClientRects()[0] — the first-line
+        // fragment reports ~one line of height, which collapsed the
+        // sentence-mass centring for multi-line sentences (top is the
+        // same in both).
+        return range.getBoundingClientRect();
+      }
+
+      function rectFromNode(node) {
+        if (!node) {
+          return null;
+        }
+
+        if (node.nodeType === Node.TEXT_NODE) {
+          var textRange = document.createRange();
+          textRange.selectNodeContents(node);
+          return rectFromRange(textRange);
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+          return null;
+        }
+
+        var rects = node.getClientRects();
+        if (rects && rects.length > 0) {
+          return rects[0];
+        }
+
+        for (var i = 0; i < node.childNodes.length; i += 1) {
+          var childRect = rectFromNode(node.childNodes[i]);
+          if (childRect) {
+            return childRect;
+          }
+        }
+
+        return node.getBoundingClientRect();
+      }
+
+      function fragmentCandidates(fragment) {
+        var value = String(fragment || "").trim();
+        if (!value) {
+          return [];
+        }
+
+        if (value.charAt(0) === "#") {
+          value = value.slice(1);
+        }
+
+        var candidates = [value];
+        try {
+          var decoded = decodeURIComponent(value);
+          if (decoded && candidates.indexOf(decoded) < 0) {
+            candidates.push(decoded);
+          }
+        } catch (_) {}
+
+        return candidates;
+      }
+
+      function elementFromFragment(fragment) {
+        var candidates = fragmentCandidates(fragment);
+
+        for (var i = 0; i < candidates.length; i += 1) {
+          var element = document.getElementById(candidates[i]);
+          if (element) {
+            return element;
+          }
+        }
+
+        for (var j = 0; j < candidates.length; j += 1) {
+          var namedElements = document.getElementsByName(candidates[j]);
+          for (var k = 0; k < namedElements.length; k += 1) {
+            return namedElements[k];
+          }
+        }
+
+        return null;
+      }
+
+      function findHeadingByTitle(title) {
+        var target = String(title || "").trim();
+        if (!target) {
+          return null;
+        }
+
+        var headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
+        for (var i = 0; i < headings.length; i += 1) {
+          var text = String(headings[i].textContent || "").trim();
+          if (text === target) {
+            return headings[i];
+          }
+        }
+
+        for (var j = 0; j < headings.length; j += 1) {
+          var partial = String(headings[j].textContent || "").trim();
+          if (partial && partial.indexOf(target) >= 0) {
+            return headings[j];
+          }
+        }
+
+        return null;
+      }
+
+      function rectFromLocator(locator, nearY) {
+        try {
+          var locations = locator && locator.locations ? locator.locations : {};
+          var text = locator && locator.text ? locator.text : {};
+          var root = document.body;
+          var element = null;
+
+          if (locations.cssSelector) {
+            element = document.querySelector(locations.cssSelector);
+            if (element) {
+              root = element;
+            }
+          }
+
+          if (!element && Array.isArray(locations.fragments)) {
+            for (var i = 0; i < locations.fragments.length; i += 1) {
+              element = elementFromFragment(locations.fragments[i]);
+              if (element) {
                 break;
               }
-
-              var position = 1;
-              var sibling = current.previousElementSibling;
-              while (sibling) {
-                if (sibling.nodeName === current.nodeName) {
-                  position += 1;
-                }
-                sibling = sibling.previousElementSibling;
-              }
-
-              selector += ":nth-of-type(" + position + ")";
-              segments.unshift(selector);
-              current = current.parentElement;
             }
-
-            if (segments.length === 0) {
-              return "body";
-            }
-            return segments.join(" > ");
           }
 
-          function makeRectJSON(rect) {
-            return {
-              x: rect.x,
-              y: rect.y,
-              width: rect.width,
-              height: rect.height,
-              top: rect.top,
-              right: rect.right,
-              bottom: rect.bottom,
-              left: rect.left,
-            };
+          if (element) {
+            return rectFromNode(element);
           }
 
-          function rangeForTextNormalized(searchRoot, target, before, after, nearY) {
-            var walker = document.createTreeWalker(searchRoot, NodeFilter.SHOW_TEXT, null);
-            var nodes = [];
-            var total = 0;
-            var node;
-            while ((node = walker.nextNode())) {
-              var raw = node.textContent || "";
-              if (!raw) { continue; }
-              nodes.push({ node: node, start: total, raw: raw });
-              total += raw.length;
+          if (locator && locator.title) {
+            element = findHeadingByTitle(locator.title);
+            if (element) {
+              return rectFromNode(element);
             }
-            if (nodes.length === 0) { return null; }
-            var full = "";
-            for (var i = 0; i < nodes.length; i += 1) { full += nodes[i].raw; }
-            var norm = "";
-            var map = [];
-            var lastSpace = true;
-            for (var j = 0; j < full.length; j += 1) {
-              var ch = full[j];
-              if (ch === "\\u00AD") { continue; }
-              if (/[\\u2010-\\u2015\\u2212]/.test(ch)) { ch = "-"; }
-              if (/\\s/.test(ch)) {
-                if (lastSpace) { continue; }
-                norm += " ";
-                map.push(j);
-                lastSpace = true;
-              } else {
-                norm += ch;
-                map.push(j);
-                lastSpace = false;
-              }
-            }
-            function normStr(s) {
-              return String(s || "")
-                .replace(/\\u00AD/g, "")
-                .replace(/[\\u2010-\\u2015\\u2212]/g, "-")
-                .replace(/\\s+/g, " ")
-                .trim();
-            }
-            var h = normStr(target);
-            if (!h) { return null; }
-            var b = normStr(before);
-            var a = normStr(after);
-            function occTop(occIdx) {
-              var rawIdx = map[occIdx];
-              for (var q = 0; q < nodes.length; q += 1) {
-                if (rawIdx < nodes[q].start + nodes[q].raw.length) {
-                  var rr = document.createRange();
-                  rr.selectNodeContents(nodes[q].node);
-                  var rect = rectFromRange(rr);
-                  var body = (document.body || document.documentElement).getBoundingClientRect();
-                  return rect ? rect.top - body.top : 0;
-                }
-              }
-              return 0;
-            }
-            var useNear = typeof nearY === "number";
-            var best = -1;
-            var bestScore = -1;
-            var bestDist = Infinity;
-            var idx = norm.indexOf(h);
-            while (idx >= 0) {
-              var score = 0;
-              if (b && norm.slice(Math.max(0, idx - b.length - 2), idx).indexOf(b) >= 0) { score += 1; }
-              if (a && norm.slice(idx + h.length, idx + h.length + a.length + 2).indexOf(a) >= 0) { score += 1; }
-              var dist = useNear ? Math.abs(occTop(idx) - nearY) : 0;
-              if (score > bestScore || (score === bestScore && useNear && dist < bestDist)) {
-                bestScore = score;
-                bestDist = dist;
-                best = idx;
-              }
-              idx = norm.indexOf(h, idx + 1);
-            }
-            if (best < 0) { return null; }
-            var rawStart = map[best];
-            var rawEnd = map[best + h.length - 1] + 1;
-            function locate(rawIndex) {
-              for (var n = 0; n < nodes.length; n += 1) {
-                var entry = nodes[n];
-                if (rawIndex < entry.start + entry.raw.length) {
-                  return { node: entry.node, offset: rawIndex - entry.start };
-                }
-              }
-              var last = nodes[nodes.length - 1];
-              return { node: last.node, offset: last.raw.length };
-            }
-            var startPos = locate(rawStart);
-            var endPos = locate(rawEnd - 1);
-            var range = document.createRange();
-            range.setStart(startPos.node, startPos.offset);
-            range.setEnd(endPos.node, endPos.offset + 1);
-            return range;
           }
 
-          function rangeForText(root, highlight, before, after, nearY) {
-            var target = String(highlight || "").trim();
-            if (!target) {
-              return null;
-            }
-
-            var searchRoot = root || document.body;
-            var walker = document.createTreeWalker(searchRoot, NodeFilter.SHOW_TEXT, {
-              acceptNode: function (node) {
-                return node.textContent && node.textContent.trim()
-                  ? NodeFilter.FILTER_ACCEPT
-                  : NodeFilter.FILTER_REJECT;
-              },
-            });
-
-            var matches = [];
-            var node;
-            while ((node = walker.nextNode())) {
-              var text = node.textContent || "";
-              var index = text.indexOf(target);
-              while (index >= 0) {
-                matches.push({ node: node, index: index, text: text });
-                index = text.indexOf(target, index + 1);
-              }
-            }
-
-            if (matches.length === 0) {
-              // aanel: exact per-node match failed (footnote superscripts,
-              // typographic spaces, soft hyphens split or alter the text
-              // nodes) — fall back to a normalized cross-node search so the
-              // follow resolves everything the decoration engine can.
-              return rangeForTextNormalized(searchRoot, target, before, after, nearY);
-            }
-
-            function score(match) {
-              var points = 0;
-              if (before && match.text.slice(Math.max(0, match.index - before.length), match.index).indexOf(before) >= 0) {
-                points += 1;
-              }
-              if (after && match.text.slice(match.index + target.length, match.index + target.length + after.length).indexOf(after) >= 0) {
-                points += 1;
-              }
-              return points;
-            }
-
-            // aanel: repeated phrases used to resolve to the FIRST occurrence
-            // in the document on score ties, teleporting follows to identical
-            // sentences pages away. With a nearY hint (the current reading
-            // position), equal-scoring candidates prefer the nearest one.
-            var docTop = documentTopOffset();
-            function matchTop(m) {
-              var r = document.createRange();
-              r.setStart(m.node, m.index);
-              r.setEnd(m.node, Math.min(m.index + target.length, (m.node.textContent || "").length));
-              var rect = rectFromRange(r);
-              return rect ? rect.top - docTop : 0;
-            }
-            var useNear = typeof nearY === "number" && matches.length > 1;
-            var best = matches[0];
-            var bestScore = score(best);
-            var bestDist = useNear ? Math.abs(matchTop(best) - nearY) : 0;
-            for (var i = 1; i < matches.length; i += 1) {
-              var candidateScore = score(matches[i]);
-              if (candidateScore < bestScore) { continue; }
-              var dist = useNear ? Math.abs(matchTop(matches[i]) - nearY) : 0;
-              if (candidateScore > bestScore || (useNear && dist < bestDist)) {
-                best = matches[i];
-                bestScore = candidateScore;
-                bestDist = dist;
-              }
-            }
-
-            var range = document.createRange();
-            range.setStart(best.node, best.index);
-            range.setEnd(best.node, best.index + target.length);
-            return range;
+          if (text && text.highlight) {
+            return rectFromRange(rangeForText(root, text.highlight, text.before, text.after, nearY));
           }
+        } catch (_) {}
 
-          function rectFromRange(range) {
-            if (!range) {
-              return null;
-            }
+        return null;
+      }
 
-            // aanel: the union box, not getClientRects()[0] — the first-line
-            // fragment reports ~one line of height, which collapsed the
-            // sentence-mass centring for multi-line sentences (top is the
-            // same in both).
-            return range.getBoundingClientRect();
+      function documentTopOffset() {
+        var root = document.body || document.documentElement;
+        if (!root) {
+          return 0;
+        }
+        return root.getBoundingClientRect().top;
+      }
+
+      function shouldIgnoreElement(element) {
+        var style = getComputedStyle(element);
+        if (!style) {
+          return false;
+        }
+
+        if (style.getPropertyValue("display") !== "block") {
+          return true;
+        }
+        return style.getPropertyValue("opacity") === "0";
+      }
+
+      function isElementVisibleInRect(element, rect) {
+        if (element === document.body || element === document.documentElement) {
+          return true;
+        }
+
+        var elementRect = element.getBoundingClientRect();
+        return (
+          elementRect.bottom > rect.top &&
+          elementRect.top < rect.bottom &&
+          elementRect.right > rect.left &&
+          elementRect.left < rect.right
+        );
+      }
+
+      function findElementInRect(rootElement, rect) {
+        for (var i = 0; i < rootElement.children.length; i += 1) {
+          var child = rootElement.children[i];
+          if (!shouldIgnoreElement(child) && isElementVisibleInRect(child, rect)) {
+            return findElementInRect(child, rect);
           }
+        }
+        return rootElement;
+      }
 
-          function rectFromNode(node) {
-            if (!node) {
-              return null;
-            }
+      function contentHeight() {
+        var root = document.scrollingElement || document.documentElement || document.body;
+        return Math.max(
+          root ? root.scrollHeight : 0,
+          root ? root.offsetHeight : 0,
+          document.documentElement ? document.documentElement.scrollHeight : 0,
+          document.documentElement ? document.documentElement.offsetHeight : 0,
+          document.body ? document.body.scrollHeight : 0,
+          document.body ? document.body.offsetHeight : 0
+        );
+      }
 
-            if (node.nodeType === Node.TEXT_NODE) {
-              var textRange = document.createRange();
-              textRange.selectNodeContents(node);
-              return rectFromRange(textRange);
-            }
-
-            if (node.nodeType !== Node.ELEMENT_NODE) {
-              return null;
-            }
-
-            var rects = node.getClientRects();
-            if (rects && rects.length > 0) {
-              return rects[0];
-            }
-
-            for (var i = 0; i < node.childNodes.length; i += 1) {
-              var childRect = rectFromNode(node.childNodes[i]);
-              if (childRect) {
-                return childRect;
-              }
-            }
-
-            return node.getBoundingClientRect();
-          }
-
-          function fragmentCandidates(fragment) {
-            var value = String(fragment || "").trim();
-            if (!value) {
-              return [];
-            }
-
-            if (value.charAt(0) === "#") {
-              value = value.slice(1);
-            }
-
-            var candidates = [value];
-            try {
-              var decoded = decodeURIComponent(value);
-              if (decoded && candidates.indexOf(decoded) < 0) {
-                candidates.push(decoded);
-              }
-            } catch (_) {}
-
-            return candidates;
-          }
-
-          function elementFromFragment(fragment) {
-            var candidates = fragmentCandidates(fragment);
-
-            for (var i = 0; i < candidates.length; i += 1) {
-              var element = document.getElementById(candidates[i]);
-              if (element) {
-                return element;
-              }
-            }
-
-            for (var j = 0; j < candidates.length; j += 1) {
-              var namedElements = document.getElementsByName(candidates[j]);
-              for (var k = 0; k < namedElements.length; k += 1) {
-                return namedElements[k];
-              }
-            }
-
+      window.readiumContinuous = {
+        contentHeight: contentHeight,
+        locatorRect: function (locator) {
+          var rect = rectFromLocator(locator);
+          return rect ? makeRectJSON(rect) : null;
+        },
+        locatorYOffset: function (locator, nearY) {
+          var rect = rectFromLocator(locator, nearY);
+          if (!rect) {
             return null;
           }
-
-          function findHeadingByTitle(title) {
-            var target = String(title || "").trim();
-            if (!target) {
-              return null;
-            }
-
-            var headings = document.querySelectorAll("h1, h2, h3, h4, h5, h6");
-            for (var i = 0; i < headings.length; i += 1) {
-              var text = String(headings[i].textContent || "").trim();
-              if (text === target) {
-                return headings[i];
-              }
-            }
-
-            for (var j = 0; j < headings.length; j += 1) {
-              var partial = String(headings[j].textContent || "").trim();
-              if (partial && partial.indexOf(target) >= 0) {
-                return headings[j];
-              }
-            }
-
-            return null;
-          }
-
-          function rectFromLocator(locator, nearY) {
-            try {
-              var locations = locator && locator.locations ? locator.locations : {};
-              var text = locator && locator.text ? locator.text : {};
-              var root = document.body;
-              var element = null;
-
-              if (locations.cssSelector) {
-                element = document.querySelector(locations.cssSelector);
-                if (element) {
-                  root = element;
-                }
-              }
-
-              if (!element && Array.isArray(locations.fragments)) {
-                for (var i = 0; i < locations.fragments.length; i += 1) {
-                  element = elementFromFragment(locations.fragments[i]);
-                  if (element) {
-                    break;
-                  }
-                }
-              }
-
-              if (element) {
-                return rectFromNode(element);
-              }
-
-              if (locator && locator.title) {
-                element = findHeadingByTitle(locator.title);
-                if (element) {
-                  return rectFromNode(element);
-                }
-              }
-
-              if (text && text.highlight) {
-                return rectFromRange(rangeForText(root, text.highlight, text.before, text.after, nearY));
-              }
-            } catch (_) {}
-
-            return null;
-          }
-
-          function documentTopOffset() {
-            var root = document.body || document.documentElement;
-            if (!root) {
-              return 0;
-            }
-            return root.getBoundingClientRect().top;
-          }
-
-          function shouldIgnoreElement(element) {
-            var style = getComputedStyle(element);
-            if (!style) {
-              return false;
-            }
-
-            if (style.getPropertyValue("display") !== "block") {
-              return true;
-            }
-            return style.getPropertyValue("opacity") === "0";
-          }
-
-          function isElementVisibleInRect(element, rect) {
-            if (element === document.body || element === document.documentElement) {
-              return true;
-            }
-
-            var elementRect = element.getBoundingClientRect();
-            return (
-              elementRect.bottom > rect.top &&
-              elementRect.top < rect.bottom &&
-              elementRect.right > rect.left &&
-              elementRect.left < rect.right
-            );
-          }
-
-          function findElementInRect(rootElement, rect) {
-            for (var i = 0; i < rootElement.children.length; i += 1) {
-              var child = rootElement.children[i];
-              if (!shouldIgnoreElement(child) && isElementVisibleInRect(child, rect)) {
-                return findElementInRect(child, rect);
-              }
-            }
-            return rootElement;
-          }
-
-          function contentHeight() {
-            var root = document.scrollingElement || document.documentElement || document.body;
-            return Math.max(
-              root ? root.scrollHeight : 0,
-              root ? root.offsetHeight : 0,
-              document.documentElement ? document.documentElement.scrollHeight : 0,
-              document.documentElement ? document.documentElement.offsetHeight : 0,
-              document.body ? document.body.scrollHeight : 0,
-              document.body ? document.body.offsetHeight : 0
-            );
-          }
-
-          window.readiumContinuous = {
-            contentHeight: contentHeight,
-            locatorRect: function (locator) {
-              var rect = rectFromLocator(locator);
-              return rect ? makeRectJSON(rect) : null;
+          return { top: rect.top - documentTopOffset(), height: rect.height || 0 };
+        },
+        findFirstVisibleLocatorInRect: function (rect) {
+          var visibleRect = rect || {
+            top: 0,
+            left: 0,
+            right: window.innerWidth,
+            bottom: window.innerHeight,
+          };
+          var element = findElementInRect(document.body, visibleRect);
+          return {
+            href: "#",
+            type: "application/xhtml+xml",
+            locations: {
+              cssSelector: cssSelectorForElement(element),
             },
-            locatorYOffset: function (locator, nearY) {
-              var rect = rectFromLocator(locator, nearY);
-              if (!rect) {
-                return null;
-              }
-              return { top: rect.top - documentTopOffset(), height: rect.height || 0 };
-            },
-            findFirstVisibleLocatorInRect: function (rect) {
-              var visibleRect = rect || {
-                top: 0,
-                left: 0,
-                right: window.innerWidth,
-                bottom: window.innerHeight,
-              };
-              var element = findElementInRect(document.body, visibleRect);
-              return {
-                href: "#",
-                type: "application/xhtml+xml",
-                locations: {
-                  cssSelector: cssSelectorForElement(element),
-                },
-                text: {
-                  highlight: (element.textContent || "").trim(),
-                },
-              };
-            },
-            notifyLayoutChange: function () {
-              webkit.messageHandlers.continuousContentLayoutChanged.postMessage({});
+            text: {
+              highlight: (element.textContent || "").trim(),
             },
           };
+        },
+        notifyLayoutChange: function () {
+          webkit.messageHandlers.continuousContentLayoutChanged.postMessage({});
+        },
+      };
 
-          window.addEventListener("load", function () {
-            var pendingNotification;
-            function notify() {
-              if (pendingNotification) {
-                cancelAnimationFrame(pendingNotification);
-              }
-              pendingNotification = requestAnimationFrame(function () {
-                window.readiumContinuous.notifyLayoutChange();
-              });
-            }
-
-            notify();
-            var observer = new ResizeObserver(notify);
-            observer.observe(document.documentElement);
-            observer.observe(document.body);
+      window.addEventListener("load", function () {
+        var pendingNotification;
+        function notify() {
+          if (pendingNotification) {
+            cancelAnimationFrame(pendingNotification);
+          }
+          pendingNotification = requestAnimationFrame(function () {
+            window.readiumContinuous.notifyLayoutChange();
           });
-        })();
-        """
+        }
+
+        notify();
+        var observer = new ResizeObserver(notify);
+        observer.observe(document.documentElement);
+        observer.observe(document.body);
+      });
+    })();
+    """
 
     private var isContinuousScrolling: Bool {
         scrollMode == .continuous
@@ -726,7 +726,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         return first ... last
     }
 
-    // aanel-settle-continuous-begin
+    /// aanel-settle-continuous-begin
     /// aanel: centre-locator emitter for continuous scroll mode. The OUTER
     /// ContinuousPaginationView owns the scrolling surface and calls this on
     /// the spread under the viewport centre; `point` is in this view's
@@ -798,9 +798,10 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             completion(true)
         }
     }
+
     // aanel-settle-continuous-end
 
-    // aanel-settle-paginated-begin
+    /// aanel-settle-paginated-begin
     /// aanel: **page-centre** locator emitter for PAGINATED (Sivut) mode —
     /// Phase 2 step 2b of the reader native migration
     /// (`docs/architecture/reader-native-migration.md`, contract §3.2).
@@ -959,6 +960,7 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             )
         }
     }
+
     // aanel-settle-paginated-end
 
     override func spreadDidLoad() async {
@@ -975,7 +977,8 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         // aanel-divider-begin: scroll-mode full-bleed chapter hairline,
         // suppressed on the last resource (no trailing line at book end).
         if viewModel.scroll,
-           spread.readingOrderIndices.upperBound < viewModel.readingOrder.count - 1 {
+           spread.readingOrderIndices.upperBound < viewModel.readingOrder.count - 1
+        {
             await evaluateScript("(function(){if(!document.body)return;if(document.getElementById(\"aanel-divider-style\"))return;var s=document.createElement(\"style\");s.id=\"aanel-divider-style\";s.textContent=\"body::after{content:\\\"\\\";display:block;position:relative;left:50%;transform:translateX(-50%);width:100vw;height:1px;background:#CAD5DF;margin:48px 0 8px 0;border:0;pointer-events:none;}\";document.head.appendChild(s);})()")
         }
         // aanel-divider-end
@@ -1135,48 +1138,15 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         case let .locator(locator):
             for attempt in 0 ..< 6 {
                 if let rect = await locatorYOffset(for: locator, nearY: nearY.map { $0 - aanelContinuousInsets.top }) {
-                    // aanel: centre the sentence's visible MASS at 50% of the
-                    // viewport (top-at-45% left long sentences hanging mostly
-                    // below centre — "tracking feels lazy/off-centre").
                     aanelLastTargetFromAnchor = true
-                    let visibleMass = min(rect.height, viewportHeight * 0.5)
-                    let centred = rect.top + visibleMass / 2 - viewportHeight * 0.5
-                    // aanel: deliberately NOT clamped to this resource's own
-                    // `maxOffset`. Centring a sentence that sits in the last
-                    // half-viewport of a chapter requires a target PAST
-                    // `pageHeight - viewportHeight`, so the continuous surface
-                    // scrolls the seam up and reveals the next resource below —
-                    // which is the whole point of one continuous scroll surface.
-                    // With the clamp, every sentence in that tail resolved to the
-                    // SAME target, so `goToIndex`'s `abs(contentOffset.y - targetY)
-                    // <= 2` convergence check reported success without moving and
-                    // the narrated sentence rode to the bottom of the screen for
-                    // the last half-viewport of EVERY chapter (device-reported).
-                    //
-                    // The `max(…, 0)` lower bound STAYS, and is load-bearing: a
-                    // `progression: 0` TOC locator computes `-viewportHeight / 2`,
-                    // which unclamped would land back in the previous resource.
-                    //
-                    // Dropping the upper bound cannot flip `currentIndex` forward,
-                    // because the viewport TOP provably stays inside this resource
-                    // and `updateCurrentIndexFromViewport` resolves the index from
-                    // `contentOffset.y + 1`:
-                    //     visibleMass = min(rect.height, viewportHeight / 2)
-                    //               ≤ viewportHeight / 2
-                    //  ⇒  centred    ≤ rect.top - viewportHeight / 4
-                    //               ≤ documentHeight - viewportHeight / 4
-                    // while `pageHeight == insets.top + documentHeight +
-                    // insets.bottom`, so the target stays below this resource's
-                    // end by at least `viewportHeight / 4 + insets.bottom`.
-                    // (`rect.top ≤ documentHeight` because `locatorYOffset` and
-                    // `updateDocumentHeight` both read the same laid-out document
-                    // through `readiumContinuous`.)
-                    //
-                    // The container's `clampYOffset` still bounds the absolute
-                    // offset against total content size, so the true end of the
-                    // BOOK still bottoms out and lets the highlight drift — the
-                    // one place where drifting is correct — with no special case.
-                    return max(aanelContinuousInsets.top + centred, 0)
+                    // aanel: NOT clamped to this resource's own `maxOffset` —
+                    // see `aanelCentredYOffset`.
+                    return Self.aanelCentredYOffset(
+                        rectTop: rect.top,
+                        rectHeight: rect.height,
+                        viewportHeight: viewportHeight,
+                        insetTop: aanelContinuousInsets.top
+                    )
                 }
 
                 guard attempt < 5 else {
@@ -1205,6 +1175,60 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
 
             return 0
         }
+    }
+
+    /// aanel: the continuous-scroll read-along centring arithmetic, extracted
+    /// as a pure function so it can be unit-tested without a webview.
+    /// `rectTop`/`rectHeight` are the anchor's frame in document space, as
+    /// resolved by `readiumContinuous.locatorYOffset`.
+    ///
+    /// Centres the sentence's visible MASS at 50% of the viewport (top-at-45%
+    /// left long sentences hanging mostly below centre — "tracking feels
+    /// lazy/off-centre").
+    ///
+    /// The result is deliberately **not** bounded above by this resource's own
+    /// `pageHeight - viewportHeight`. Centring a sentence that sits in the last
+    /// half-viewport of a chapter requires a target past that bound, so the
+    /// continuous surface scrolls the seam up and reveals the next resource
+    /// below — which is the whole point of one continuous scroll surface. With
+    /// such a clamp, every sentence in that tail resolved to the SAME target,
+    /// so `goToIndex`'s `abs(contentOffset.y - targetY) <= 2` convergence check
+    /// reported success without moving and the narrated sentence rode to the
+    /// bottom of the screen for the last half-viewport of EVERY chapter
+    /// (device-reported).
+    ///
+    /// The lower bound is load-bearing and stays: a `progression: 0` locator
+    /// (a TOC target) computes `-viewportHeight / 2`, which unclamped would
+    /// land back in the previous resource.
+    ///
+    /// Leaving the upper bound off cannot flip `currentIndex` forward, because
+    /// the viewport TOP provably stays inside this resource and
+    /// `ContinuousPaginationView.updateCurrentIndexFromViewport` resolves the
+    /// index from `contentOffset.y + 1`:
+    ///
+    ///     visibleMass = min(rectHeight, viewportHeight / 2) <= viewportHeight / 2
+    ///  => result      <= insetTop + rectTop - viewportHeight / 4
+    ///                 <= insetTop + documentHeight - viewportHeight / 4
+    ///
+    /// while `preferredHeight == insetTop + documentHeight + insetBottom`, so
+    /// the target stays below this resource's end by at least
+    /// `viewportHeight / 4 + insetBottom`. (`rectTop <= documentHeight` because
+    /// `locatorYOffset` and `updateDocumentHeight` read the same laid-out
+    /// document through `readiumContinuous`.)
+    ///
+    /// `ContinuousPaginationView.clampYOffset` still bounds the absolute offset
+    /// against total content size, so the true end of the BOOK still bottoms
+    /// out and lets the highlight drift — the one place drifting is correct —
+    /// with no special case here.
+    static func aanelCentredYOffset(
+        rectTop: CGFloat,
+        rectHeight: CGFloat,
+        viewportHeight: CGFloat,
+        insetTop: CGFloat
+    ) -> CGFloat {
+        let visibleMass = min(rectHeight, viewportHeight * 0.5)
+        let centred = rectTop + visibleMass / 2 - viewportHeight * 0.5
+        return max(insetTop + centred, 0)
     }
 
     override func firstVisibleElementLocator(in visibleRect: CGRect) async -> Locator? {
