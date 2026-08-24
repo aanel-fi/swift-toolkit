@@ -1141,7 +1141,42 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
                     aanelLastTargetFromAnchor = true
                     let visibleMass = min(rect.height, viewportHeight * 0.5)
                     let centred = rect.top + visibleMass / 2 - viewportHeight * 0.5
-                    return min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
+                    // aanel: deliberately NOT clamped to this resource's own
+                    // `maxOffset`. Centring a sentence that sits in the last
+                    // half-viewport of a chapter requires a target PAST
+                    // `pageHeight - viewportHeight`, so the continuous surface
+                    // scrolls the seam up and reveals the next resource below —
+                    // which is the whole point of one continuous scroll surface.
+                    // With the clamp, every sentence in that tail resolved to the
+                    // SAME target, so `goToIndex`'s `abs(contentOffset.y - targetY)
+                    // <= 2` convergence check reported success without moving and
+                    // the narrated sentence rode to the bottom of the screen for
+                    // the last half-viewport of EVERY chapter (device-reported).
+                    //
+                    // The `max(…, 0)` lower bound STAYS, and is load-bearing: a
+                    // `progression: 0` TOC locator computes `-viewportHeight / 2`,
+                    // which unclamped would land back in the previous resource.
+                    //
+                    // Dropping the upper bound cannot flip `currentIndex` forward,
+                    // because the viewport TOP provably stays inside this resource
+                    // and `updateCurrentIndexFromViewport` resolves the index from
+                    // `contentOffset.y + 1`:
+                    //     visibleMass = min(rect.height, viewportHeight / 2)
+                    //               ≤ viewportHeight / 2
+                    //  ⇒  centred    ≤ rect.top - viewportHeight / 4
+                    //               ≤ documentHeight - viewportHeight / 4
+                    // while `pageHeight == insets.top + documentHeight +
+                    // insets.bottom`, so the target stays below this resource's
+                    // end by at least `viewportHeight / 4 + insets.bottom`.
+                    // (`rect.top ≤ documentHeight` because `locatorYOffset` and
+                    // `updateDocumentHeight` both read the same laid-out document
+                    // through `readiumContinuous`.)
+                    //
+                    // The container's `clampYOffset` still bounds the absolute
+                    // offset against total content size, so the true end of the
+                    // BOOK still bottoms out and lets the highlight drift — the
+                    // one place where drifting is correct — with no special case.
+                    return max(aanelContinuousInsets.top + centred, 0)
                 }
 
                 guard attempt < 5 else {
