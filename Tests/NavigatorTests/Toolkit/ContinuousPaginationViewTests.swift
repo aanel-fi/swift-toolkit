@@ -158,6 +158,110 @@ struct ContinuousPaginationViewTests {
         #expect(didJump)
         #expect(abs(paginationView.viewportRect.minY - 180) < 0.5)
     }
+
+    /// aanel: the container half of the "an unresolvable narrated sentence must
+    /// not yank the reader to the top of the chapter" invariant (device-
+    /// reproduced 2026-08-25, iPhone 17 Pro: `to == baseOffset`, delta
+    /// -7337.7pt, 15.7s stranded mid-playback).
+    ///
+    /// A read-along follow locator carries NO `locations` by construction
+    /// (`readAlong.ts`'s `textOnlyLocator` omits them so Readium's text-anchor
+    /// search runs at all), so `progression` is nil for every follow. When the
+    /// spread cannot resolve the anchor either, there is no destination — and
+    /// `goToIndex`'s guard is written to hold position and report FAILURE so
+    /// the caller's retry loop re-attempts.
+    ///
+    /// That guard can only fire on a NON-FINITE answer, which is why
+    /// `EPUBReflowableSpreadView.aanelProgressionFallbackYOffset` returns
+    /// `.nan`. Its paired control below shows the guard is powerless against
+    /// the finite `0` the spread returned until r13 — so this test's oracle is
+    /// not vacuous: the same assertions go red on the pre-fix value.
+    @MainActor
+    @Test("an unresolvable text anchor holds position and reports failure")
+    func unresolvableTextAnchorHoldsPosition() async {
+        let delegate = TestPaginationDelegate(
+            pageHeights: [1000, 1000, 1000],
+            locatorTargetOffset: .nan
+        )
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 500)
+        )
+
+        // Park the reader mid-chapter, 500pt below page 1's start at 1000.
+        paginationView.reloadAtIndex(1, location: .end, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(abs(paginationView.viewportRect.minY - 1500) < 0.5)
+
+        let didJump = await paginationView.goToIndex(
+            1,
+            location: .locator(Self.followLocator),
+            options: .none
+        )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        // Failure, so the caller's retry loop re-attempts…
+        #expect(!didJump)
+        // …and, crucially, the reader has not moved. 1000 here would be the
+        // chapter top — the yank.
+        #expect(abs(paginationView.viewportRect.minY - 1500) < 0.5)
+        #expect(paginationView.currentIndex == 1)
+    }
+
+    /// aanel: the PAIRED CONTROL for the test above, and the reason the fix had
+    /// to land in the spread rather than the container. It pins the pre-r13
+    /// behaviour: a FINITE `0` is indistinguishable from a real destination, so
+    /// `resolvedTargetYOffset` keeps it, the `resolved == nil` guard never
+    /// fires, and the surface scrolls to `baseOffset` — the top of the chapter.
+    /// Same fixture, same locator; only the spread's answer differs.
+    ///
+    /// It asserts the POSITION and deliberately not the return value. On the
+    /// device the pre-r13 navigation reported *failure* and moved anyway
+    /// (`provisional=yes fromAnchor=no … delta=-7337.7`), because `provisional`
+    /// is computed from `EPUBSpreadView.aanelLastTargetFromAnchor` — a flag
+    /// this stub cannot carry, since it is not an `EPUBSpreadView`, so the
+    /// container reads the `?? true` default and reports success instead. The
+    /// return value here is therefore an artefact of the fixture; the movement
+    /// is the defect, and the movement is what reproduces faithfully. (The NaN
+    /// test above is unaffected: its guard returns before `provisional` is ever
+    /// computed, so `!didJump` there is fixture-independent.)
+    @MainActor
+    @Test("a finite fallback of 0 yanks to the chapter top — the pre-r13 defect")
+    func finiteZeroFallbackYanksToChapterTop() async {
+        let delegate = TestPaginationDelegate(
+            pageHeights: [1000, 1000, 1000],
+            locatorTargetOffset: 0
+        )
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 500)
+        )
+
+        paginationView.reloadAtIndex(1, location: .end, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(abs(paginationView.viewportRect.minY - 1500) < 0.5)
+
+        _ = await paginationView.goToIndex(
+            1,
+            location: .locator(Self.followLocator),
+            options: .none
+        )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        // The reader has been pulled 500pt back to the chapter's first line —
+        // on the device this was a 7337.7pt jump mid-playback.
+        #expect(abs(paginationView.viewportRect.minY - 1000) < 0.5)
+    }
+
+    /// A read-along follow locator: a text anchor and nothing else. No
+    /// `locations`, so no progression — see `readAlong.ts` `textOnlyLocator`.
+    private static var followLocator: Locator {
+        Locator(
+            href: AnyURL(string: "chapter2.xhtml")!,
+            mediaType: .xhtml,
+            text: Locator.Text(highlight: "the narrated sentence")
+        )
+    }
 }
 
 @MainActor
