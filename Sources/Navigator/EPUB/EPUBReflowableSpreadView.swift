@@ -1167,14 +1167,58 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             // success — the exact landing then waited for the next sentence).
             aanelLastTargetFromAnchor = false
 
-            if let progression = locator.locations.progression {
-                let documentHeight = measuredDocumentHeight ?? estimatedDocumentHeight
-                let centred = documentHeight * progression - viewportHeight * 0.5
-                return min(max(aanelContinuousInsets.top + centred, 0), maxOffset)
-            }
-
-            return 0
+            return Self.aanelProgressionFallbackYOffset(
+                progression: locator.locations.progression,
+                documentHeight: measuredDocumentHeight ?? estimatedDocumentHeight,
+                viewportHeight: viewportHeight,
+                insetTop: aanelContinuousInsets.top,
+                maxOffset: maxOffset
+            )
         }
+    }
+
+    /// aanel: the fallback the continuous `.locator` branch takes once the
+    /// text-anchor search has failed, extracted as a pure function so the
+    /// no-destination case can be unit-tested without a webview (same reason
+    /// as `aanelCentredYOffset` below).
+    ///
+    /// With a progression, the answer is a COARSE estimate — for read-along
+    /// locators the sidecar's chapter fraction, off by 100-250pt — but it is a
+    /// real destination, so it is centred like a resolved target and clamped
+    /// to this resource. `aanelLastTargetFromAnchor` is already false by the
+    /// time we get here, so `goToIndex` lands it PROVISIONALLY and still
+    /// reports failure, letting the caller's retry loop snap to the exact
+    /// anchor later.
+    ///
+    /// Without a progression there is no destination at all, and the answer
+    /// must be NON-FINITE. This is not a detail: a read-along follow locator
+    /// carries no `locations` at all by construction (`readAlong.ts`
+    /// `textOnlyLocator` — Readium only runs the text-anchor search when they
+    /// are absent), so `progression` is nil for EVERY follow, and this branch
+    /// is the one an unresolvable narrated sentence takes. Returning a finite
+    /// `0` here — as this did until r13 — did two things at once: it named
+    /// the TOP OF THE CHAPTER as the destination, and, by being finite, it
+    /// slipped past `ContinuousPaginationView.resolvedTargetYOffset` (which
+    /// drops only non-finite answers) and so defeated `goToIndex`'s own
+    /// `resolved == nil, … progression == nil` guard — the guard written to
+    /// hold position and report failure for exactly this case. The reader was
+    /// yanked to `baseOffset` mid-playback (device 2026-08-25, iPhone 17 Pro:
+    /// `to == baseOffset`, delta -7337.7pt, then 15.7s stranded before the
+    /// next sentence rescued it). `.nan` is the same shape
+    /// `ContinuousPaginationView.defaultTargetYOffset` already returns for a
+    /// progression-less text anchor, so the two fallbacks now agree.
+    static func aanelProgressionFallbackYOffset(
+        progression: Double?,
+        documentHeight: CGFloat,
+        viewportHeight: CGFloat,
+        insetTop: CGFloat,
+        maxOffset: CGFloat
+    ) -> CGFloat {
+        guard let progression else {
+            return .nan
+        }
+        let centred = documentHeight * progression - viewportHeight * 0.5
+        return min(max(insetTop + centred, 0), maxOffset)
     }
 
     /// aanel: the continuous-scroll read-along centring arithmetic, extracted
