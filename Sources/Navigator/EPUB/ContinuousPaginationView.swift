@@ -7,35 +7,6 @@
 import ReadiumShared
 import UIKit
 
-/// aanel: why a location change is being reported.
-///
-/// `settle` and mode-switch `restore` are driven from inside this navigator,
-/// not by the host, so a host classifying by exclusion ("everything else is
-/// the user") calls an idle height re-resolution a user scroll and detaches
-/// read-along. Height re-resolution fires whenever a WebView finishes
-/// loading — including at idle, minutes after open, while chapters preload.
-///
-/// `unspecified` is the default for every unlabelled path, so omitting a
-/// label degrades to today's behaviour rather than asserting a wrong one.
-///
-/// Reaches a consumer two ways, both fed from the same value:
-/// `NavigatorDelegate.navigator(_:locationDidChange:aanelCause:)` for anything
-/// that owns a delegate conformance, and
-/// `EPUBNavigatorViewController.aanelLastNotifiedLocationCause` for anything
-/// reached synchronously from that call — see that property for the caveat.
-public enum AanelLocationCause: Sendable {
-    /// The fork moved the surface to keep the reader in place while layout
-    /// resolved: a page height arriving late, a preload window completing.
-    case settle
-    /// The fork landed its own pre-captured target after a container swap
-    /// (a Sivut<->Rulla mode switch), which the host neither issues nor sees
-    /// complete.
-    case restore
-    /// Everything else, including every path this fork does not label.
-    /// Consumers must treat it as "no information", never as "the user".
-    case unspecified
-}
-
 /// A vertical pagination container used in continuous scroll mode.
 final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView {
     weak var delegate: PaginationViewDelegate?

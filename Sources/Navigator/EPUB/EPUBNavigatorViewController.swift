@@ -1093,8 +1093,14 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     /// collapse into one delegate call. The aggregation is deliberately
     /// **conservative**: causes that disagree collapse to `.unspecified`, so a
     /// labelled cause is only ever asserted when every report behind that one
-    /// notification agreed on it. Anything else degrades to today's behaviour
-    /// rather than telling the host a user scroll was a settle.
+    /// notification agreed on it.
+    ///
+    /// That is a claim about ONE notification, and it is the whole of the
+    /// guarantee. It does not make `.settle` evidence that the reader was
+    /// still: a scroll into a new spread starts the very layout work that
+    /// emits one, and that emission can land in its own notification window
+    /// (see `AanelLocationCause.settle`). What the aggregation buys is that a
+    /// notification is never labelled from only part of what produced it.
     private var aanelPendingLocationCause: AanelLocationCause?
 
     private func aanelNoteLocationCause(_ cause: AanelLocationCause) {

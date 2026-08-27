@@ -93,20 +93,72 @@ public extension Navigator {
     }
 }
 
+/// aanel: why a location change is being reported.
+///
+/// Two causes are labelled because they are the two a HOST cannot see. Both
+/// are driven from inside the navigator, so a host classifying by exclusion —
+/// "everything else is the user" — calls them user scrolls and detaches
+/// read-along.
+///
+/// `unspecified` is the default for every unlabelled path, so omitting a label
+/// degrades to no-information rather than asserting a wrong one. **Consumers
+/// must read it as "no information", never as "the user."**
+///
+/// Reaches a consumer two ways, both fed from the same value:
+/// `NavigatorDelegate.navigator(_:locationDidChange:aanelCause:)` for anything
+/// that owns a delegate conformance, and
+/// `EPUBNavigatorViewController.aanelLastNotifiedLocationCause` for anything
+/// reached synchronously from that call — see that property for the caveat.
+///
+/// Only `EPUBNavigatorViewController` in continuous scroll mode ever reports a
+/// cause other than `.unspecified`.
+public enum AanelLocationCause: Sendable {
+    /// Layout resolving under a reader who did not ask for it. Emitted by
+    /// `ContinuousPaginationView` from two places: `updatePageHeight`, which
+    /// runs whenever a page reports a real height — every WebView finishing
+    /// its load, including at idle minutes after open while chapters preload —
+    /// and the completion of a preload window in `loadPages`.
+    ///
+    /// **A settle is not evidence the reader was still.** Scrolling into a new
+    /// spread starts exactly this work, so a `.settle` can be emitted *during*
+    /// a finger scroll. It says this particular report came from layout rather
+    /// than from a gesture; it says nothing about what the finger was doing.
+    case settle
+    /// The navigator re-established a reading position it captured itself,
+    /// after its own spreads were rebuilt. `EPUBNavigatorViewController`
+    /// passes `navigateToLocationAfterReload: true` unconditionally, and this
+    /// labels every one of those reloads — the host issues nothing and
+    /// observes no landing in any of them:
+    ///
+    /// - the initial publication open (`initialize()`);
+    /// - any pagination-view invalidation, which covers the Sivut<->Rulla
+    ///   container swap AND a preference-driven reflow such as a font-size
+    ///   change, where the container is kept and only the spreads rebuild;
+    /// - a reload deferred while backgrounded, applied on `didBecomeActive`
+    ///   (e.g. a rotation);
+    /// - recovery from a WebView process termination.
+    ///
+    /// So `.restore` is NOT "the mode switch". It is "the navigator put the
+    /// reader back where they were after rebuilding its own spreads".
+    case restore
+    /// Everything else, including every path this fork does not label.
+    case unspecified
+}
+
 @MainActor public protocol NavigatorDelegate: AnyObject {
     /// Called when the current position in the publication changed. You should save the locator here to restore the
     /// last read page.
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator)
 
     /// aanel: the same notification, carrying the navigator's own answer to
-    /// "why did this happen".
+    /// "why did this happen" — see `AanelLocationCause`.
     ///
-    /// Every navigator reports through this method; the default implementation
-    /// forwards to the unlabelled one above, so an existing conformer needs no
-    /// change. Only `EPUBNavigatorViewController` in continuous scroll mode
-    /// ever supplies a cause other than `.unspecified` — see
-    /// `AanelLocationCause`. A conformer that implements only this method
-    /// still receives every navigator's changes.
+    /// Every navigator in this module reports through this method, and the
+    /// default implementation forwards to the unlabelled one above, so an
+    /// existing conformer needs no change. Routing the non-EPUB navigators
+    /// through it too is deliberate and is the reason they appear in the aanel
+    /// delta at all: without it, a conformer that implemented ONLY this method
+    /// would silently stop receiving audio position changes.
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator, aanelCause: AanelLocationCause)
 
     /// Called when the navigator jumps to an explicit location, which might break the linear reading progression.
