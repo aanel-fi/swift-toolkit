@@ -287,18 +287,23 @@ struct ContinuousPaginationViewTests {
         #expect(delegate.unlabelledCallCount == 0)
     }
 
-    /// aanel: the labelling channel, mode-switch `restore` half. The container
-    /// captured its target before the swap and lands it itself, so the host
-    /// issues nothing and observes no landing.
+    /// aanel: the labelling channel, `restore` half. A reload that navigates
+    /// re-establishes a position the navigator captured itself, so the host
+    /// issues nothing and observes no landing. `EPUBNavigatorViewController`
+    /// reaches this from initial open, any pagination-view invalidation (the
+    /// Sivut<->Rulla container swap and a preference-driven reflow alike), a
+    /// reload deferred while backgrounded, and WebView termination recovery —
+    /// the label covers all of them, which is why this test drives the plain
+    /// `reloadAtIndex` rather than staging a swap.
     ///
     /// The second half is the paired control, and it is the point: the SAME
-    /// `goToIndex` code path, entered as an ordinary jump rather than as the
-    /// post-swap reload navigation, reports no `.restore`. Without it,
+    /// `goToIndex` code path, entered as an ordinary jump rather than as a
+    /// reload navigation, reports no `.restore`. Without it,
     /// `contains(.restore)` would also pass on a container that labelled every
     /// emission `.restore`.
     @MainActor
-    @Test("the post-swap reload navigation reports itself as a restore, an ordinary jump does not")
-    func labelsTheModeSwitchRestore() async {
+    @Test("a navigating reload reports itself as a restore, an ordinary jump does not")
+    func labelsTheReloadRestore() async {
         let delegate = TestPaginationDelegate(pageHeights: [600, 500, 700])
         let paginationView = makePaginationView(
             delegate: delegate,
