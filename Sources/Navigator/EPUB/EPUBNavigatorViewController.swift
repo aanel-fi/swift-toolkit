@@ -1084,6 +1084,50 @@ open class EPUBNavigatorViewController: InputObservableViewController,
     /// Used to avoid sending twice the same location.
     private var notifiedCurrentLocation: Locator?
 
+    /// aanel: the cause to attach to the next location notification, or nil
+    /// when nothing has been reported since the last one.
+    ///
+    /// `updateCurrentLocation` is debounced (`execute(when:pollingInterval:)`
+    /// drops calls while it polls, and the notification itself is suppressed
+    /// when the locator is unchanged), so several container reports can
+    /// collapse into one delegate call. The aggregation is deliberately
+    /// **conservative**: causes that disagree collapse to `.unspecified`, so a
+    /// labelled cause is only ever asserted when every report behind that one
+    /// notification agreed on it. Anything else degrades to today's behaviour
+    /// rather than telling the host a user scroll was a settle.
+    private var aanelPendingLocationCause: AanelLocationCause?
+
+    private func aanelNoteLocationCause(_ cause: AanelLocationCause) {
+        if let pending = aanelPendingLocationCause, pending != cause {
+            aanelPendingLocationCause = .unspecified
+        } else {
+            aanelPendingLocationCause = cause
+        }
+    }
+
+    private func aanelTakePendingLocationCause() -> AanelLocationCause {
+        defer { aanelPendingLocationCause = nil }
+        return aanelPendingLocationCause ?? .unspecified
+    }
+
+    /// aanel: the cause attached to the location change currently being
+    /// delivered — the second half of the labelling channel, and the half a
+    /// consumer that does not implement `NavigatorDelegate` itself can read.
+    ///
+    /// **Only meaningful while that delivery is on the stack.** The wrapper's
+    /// `NavigatorDelegate` conformance re-publishes each change on a Combine
+    /// subject *synchronously* inside `navigator(_:locationDidChange:)`, so a
+    /// subscriber reading this property from its `sink` sees the cause for the
+    /// locator it was just handed. Read at any other time it is whatever the
+    /// last notification carried — stale, never wrong-by-invention, and
+    /// `.unspecified` until the first notification.
+    ///
+    /// Prefer `navigator(_:locationDidChange:aanelCause:)` where the consumer
+    /// owns its own delegate conformance: a pass-through that must be written
+    /// out cannot silently decay to `.unspecified` the way this property does
+    /// if a hop is ever inserted between the delegate call and the read.
+    public private(set) var aanelLastNotifiedLocationCause: AanelLocationCause = .unspecified
+
     private lazy var updateCurrentLocation = execute(
         // If we're not in an `idle` state, we postpone the notification.
         when: { [weak self] in self?.state == .idle },
@@ -1103,13 +1147,27 @@ open class EPUBNavigatorViewController: InputObservableViewController,
             aanelLastSettledLocation = settled
         }
 
+        // aanel: taken AFTER the await, not before it. A report that arrives
+        // while the location is being computed belongs to the notification
+        // about to be sent, and folding it in is what lets a user scroll
+        // landing mid-compute downgrade a `.settle` to `.unspecified` instead
+        // of being announced as one. Consumed unconditionally, so a cause
+        // never outlives the notification it was gathered for.
+        let aanelCause = aanelTakePendingLocationCause()
+
         if
             let delegate = delegate,
             let location = currentLocation,
             location != notifiedCurrentLocation
         {
             notifiedCurrentLocation = location
-            delegate.navigator(self, locationDidChange: location)
+            // Published BEFORE the delegate call, so a consumer reached
+            // synchronously through that call reads the cause for this very
+            // locator. Only assigned when a notification is actually sent —
+            // a suppressed duplicate leaves the previous value, which is what
+            // "the change currently being delivered" means.
+            aanelLastNotifiedLocationCause = aanelCause
+            delegate.navigator(self, locationDidChange: location, aanelCause: aanelCause)
         }
     }
 
@@ -1688,6 +1746,14 @@ extension EPUBNavigatorViewController: PaginationViewDelegate {
     }
 
     func paginationViewDidUpdateViews(_ paginationView: any PaginationContainerView) {
+        paginationViewDidUpdateViews(paginationView, aanelCause: .unspecified)
+    }
+
+    func paginationViewDidUpdateViews(
+        _ paginationView: any PaginationContainerView,
+        aanelCause: AanelLocationCause
+    ) {
+        aanelNoteLocationCause(aanelCause)
         // Note that you should set the delegate before you load views
         // otherwise, when open the publication, you may miss the first
         // invocation.
