@@ -188,7 +188,7 @@ open class CBZNavigatorViewController:
                 guard let self = self, let position = self.currentLocation else {
                     return
                 }
-                self.delegate?.navigator(self, locationDidChange: position)
+                self.delegate?.navigator(self, locationDidChange: position, aanelCause: .unspecified)
                 if isJump {
                     self.delegate?.navigator(self, didJumpTo: position)
                 }
@@ -291,7 +291,7 @@ extension CBZNavigatorViewController: UIPageViewControllerDataSource {
 extension CBZNavigatorViewController: UIPageViewControllerDelegate {
     public func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool, previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
         if completed, let position = currentLocation {
-            delegate?.navigator(self, locationDidChange: position)
+            delegate?.navigator(self, locationDidChange: position, aanelCause: .unspecified)
         }
     }
 }

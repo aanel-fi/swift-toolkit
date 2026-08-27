@@ -253,6 +253,76 @@ struct ContinuousPaginationViewTests {
         #expect(abs(paginationView.viewportRect.minY - 1000) < 0.5)
     }
 
+    /// aanel: the labelling channel (`AanelLocationCause`), height
+    /// re-resolution half. `updatePageHeight` runs whenever a page reports a
+    /// real height — on device that is every WebView finishing its load,
+    /// including at idle, minutes after open, while chapters preload. A host
+    /// classifying by exclusion ("everything else is the user") calls each one
+    /// a user scroll and detaches read-along.
+    ///
+    /// Driven through `onPreferredHeightChange` AFTER the reload has settled,
+    /// so `updatePageHeight` is the only emitter in the window and the oracle
+    /// is an equality rather than a `contains` — a `contains(.settle)` here
+    /// would also be satisfied by the preload-window emission and would stay
+    /// green if this call site lost its label.
+    @MainActor
+    @Test("a late page height re-resolution reports itself as a settle")
+    func labelsTheHeightReResolution() async {
+        let delegate = TestPaginationDelegate(pageHeights: [600, 500, 700])
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 400)
+        )
+
+        paginationView.reloadAtIndex(0, location: .start, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        delegate.reset()
+        let page = paginationView.loadedViews[0] as? TestContinuousPageView
+        #expect(page != nil)
+        page?.aanelSimulateHeightChange(to: 900)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        #expect(delegate.recordedCauses == [.settle])
+        #expect(delegate.unlabelledCallCount == 0)
+    }
+
+    /// aanel: the labelling channel, mode-switch `restore` half. The container
+    /// captured its target before the swap and lands it itself, so the host
+    /// issues nothing and observes no landing.
+    ///
+    /// The second half is the paired control, and it is the point: the SAME
+    /// `goToIndex` code path, entered as an ordinary jump rather than as the
+    /// post-swap reload navigation, reports no `.restore`. Without it,
+    /// `contains(.restore)` would also pass on a container that labelled every
+    /// emission `.restore`.
+    @MainActor
+    @Test("the post-swap reload navigation reports itself as a restore, an ordinary jump does not")
+    func labelsTheModeSwitchRestore() async {
+        let delegate = TestPaginationDelegate(pageHeights: [600, 500, 700])
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 400)
+        )
+
+        paginationView.reloadAtIndex(0, location: .start, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        #expect(delegate.recordedCauses.contains(.restore))
+        // Every emission travelled the labelled channel, so nothing reached a
+        // delegate through the unlabelled default.
+        #expect(delegate.unlabelledCallCount == 0)
+
+        delegate.reset()
+        let didJump = await paginationView.goToIndex(2, location: .start, options: .none)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        #expect(didJump)
+        #expect(delegate.recordedCauses.contains(.unspecified))
+        #expect(!delegate.recordedCauses.contains(.restore))
+        #expect(delegate.unlabelledCallCount == 0)
+    }
+
     /// A read-along follow locator: a text anchor and nothing else. No
     /// `locations`, so no progression — see `readAlong.ts` `textOnlyLocator`.
     private static var followLocator: Locator {
@@ -305,7 +375,28 @@ private final class TestPaginationDelegate: PaginationViewDelegate {
         )
     }
 
-    func paginationViewDidUpdateViews(_ paginationView: any PaginationContainerView) {}
+    /// aanel: what the container said about each notification. The unlabelled
+    /// method is counted SEPARATELY rather than folded in as `.unspecified`,
+    /// so a container that stopped using the labelled channel is visible
+    /// instead of looking like an unlabelled emission.
+    private(set) var recordedCauses: [AanelLocationCause] = []
+    private(set) var unlabelledCallCount = 0
+
+    func reset() {
+        recordedCauses.removeAll()
+        unlabelledCallCount = 0
+    }
+
+    func paginationViewDidUpdateViews(_ paginationView: any PaginationContainerView) {
+        unlabelledCallCount += 1
+    }
+
+    func paginationViewDidUpdateViews(
+        _ paginationView: any PaginationContainerView,
+        aanelCause: AanelLocationCause
+    ) {
+        recordedCauses.append(aanelCause)
+    }
 
     func paginationView(_ paginationView: any PaginationContainerView, positionCountAtIndex index: Int) -> Int {
         1
@@ -314,7 +405,9 @@ private final class TestPaginationDelegate: PaginationViewDelegate {
 
 private final class TestContinuousPageView: UIView, ContinuousPageView {
     var onPreferredHeightChange: (() -> Void)?
-    let height: CGFloat
+    /// aanel: `var`, not `let` — a real spread's height arrives late and
+    /// changes, which is the whole subject of the settle label.
+    var height: CGFloat
     let loadDelayNanoseconds: UInt64
     let locatorTargetOffset: CGFloat?
     var remainingLocatorFailures: Int
@@ -335,6 +428,14 @@ private final class TestContinuousPageView: UIView, ContinuousPageView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    /// aanel: what a WebView finishing its load does — report a new preferred
+    /// height through the callback the container bound in
+    /// `bindContinuousPageViewCallbacks`.
+    func aanelSimulateHeightChange(to newHeight: CGFloat) {
+        height = newHeight
+        onPreferredHeightChange?()
     }
 
     func go(to location: PageLocation, animated: Bool) async {

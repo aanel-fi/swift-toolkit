@@ -7,6 +7,35 @@
 import ReadiumShared
 import UIKit
 
+/// aanel: why a location change is being reported.
+///
+/// `settle` and mode-switch `restore` are driven from inside this navigator,
+/// not by the host, so a host classifying by exclusion ("everything else is
+/// the user") calls an idle height re-resolution a user scroll and detaches
+/// read-along. Height re-resolution fires whenever a WebView finishes
+/// loading — including at idle, minutes after open, while chapters preload.
+///
+/// `unspecified` is the default for every unlabelled path, so omitting a
+/// label degrades to today's behaviour rather than asserting a wrong one.
+///
+/// Reaches a consumer two ways, both fed from the same value:
+/// `NavigatorDelegate.navigator(_:locationDidChange:aanelCause:)` for anything
+/// that owns a delegate conformance, and
+/// `EPUBNavigatorViewController.aanelLastNotifiedLocationCause` for anything
+/// reached synchronously from that call — see that property for the caveat.
+public enum AanelLocationCause: Sendable {
+    /// The fork moved the surface to keep the reader in place while layout
+    /// resolved: a page height arriving late, a preload window completing.
+    case settle
+    /// The fork landed its own pre-captured target after a container swap
+    /// (a Sivut<->Rulla mode switch), which the host neither issues nor sees
+    /// complete.
+    case restore
+    /// Everything else, including every path this fork does not label.
+    /// Consumers must treat it as "no information", never as "the user".
+    case unspecified
+}
+
 /// A vertical pagination container used in continuous scroll mode.
 final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView {
     weak var delegate: PaginationViewDelegate?
@@ -248,7 +277,13 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                     index,
                     location: location,
                     options: NavigatorGoOptions(animated: false),
-                    cancelPendingReloadNavigation: false
+                    // aanel: the mode-switch restore. The navigator captured
+                    // this target before the container swap and lands it
+                    // itself, so the host issues nothing and observes no
+                    // landing — unlabelled, it reaches the host as a user
+                    // scroll.
+                    cancelPendingReloadNavigation: false,
+                    aanelCause: .restore
                 )
                 if landed || Task.isCancelled {
                     return
@@ -265,11 +300,16 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         await goToIndex(index, location: location, options: options, cancelPendingReloadNavigation: true)
     }
 
+    // aanel: `aanelCause` labels the delegate notifications this navigation
+    // produces. It defaults to `.unspecified`, so every caller that does not
+    // opt in keeps today's behaviour; only the post-swap reload navigation
+    // below claims `.restore`.
     private func goToIndex(
         _ index: Int,
         location: PageLocation,
         options: NavigatorGoOptions,
-        cancelPendingReloadNavigation: Bool
+        cancelPendingReloadNavigation: Bool,
+        aanelCause: AanelLocationCause = .unspecified
     ) async -> Bool {
         guard 0 ..< pageCount ~= index else {
             return false
@@ -372,7 +412,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             if abs(scrollView.contentOffset.y - targetY) <= 2 {
                 if provisional {
                     updateCurrentIndexFromViewport()
-                    delegate?.paginationViewDidUpdateViews(self)
+                    delegate?.paginationViewDidUpdateViews(self, aanelCause: aanelCause)
                     return false
                 }
                 break
@@ -412,12 +452,12 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
             if provisional {
                 updateCurrentIndexFromViewport()
-                delegate?.paginationViewDidUpdateViews(self)
+                delegate?.paginationViewDidUpdateViews(self, aanelCause: aanelCause)
                 return false
             }
         }
         updateCurrentIndexFromViewport()
-        delegate?.paginationViewDidUpdateViews(self)
+        delegate?.paginationViewDidUpdateViews(self, aanelCause: aanelCause)
         // aanel-settle-programmatic: the gesture-gated centre tracking in
         // scrollViewDidScroll CANNOT fire for a programmatic landing —
         // setContentOffset never sets isDragging/isDecelerating, so it is
@@ -458,7 +498,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         await setContentOffset(CGPoint(x: 0, y: targetY), animated: options.animated && !UIAccessibility.isReduceMotionEnabled)
         updateCurrentIndexFromViewport()
-        delegate?.paginationViewDidUpdateViews(self)
+        delegate?.paginationViewDidUpdateViews(self, aanelCause: .unspecified)
         return true
     }
 
@@ -489,7 +529,9 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
                 return
             }
             await self.loadNextPage()
-            self.delegate?.paginationViewDidUpdateViews(self)
+            // aanel: a preload window finished building. Fork-driven and
+            // routinely at idle, minutes after open — see AanelLocationCause.
+            self.delegate?.paginationViewDidUpdateViews(self, aanelCause: .settle)
         }
     }
 
@@ -574,7 +616,12 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
 
         setNeedsLayout()
         layoutIfNeeded()
-        delegate?.paginationViewDidUpdateViews(self)
+        // aanel: the height re-resolution. Fires whenever a WebView finishes
+        // loading and reports a real height, which happens at idle while
+        // chapters preload as well as during navigation. Compensating for it
+        // moves the surface under a stationary reader — a settle, never a
+        // user scroll.
+        delegate?.paginationViewDidUpdateViews(self, aanelCause: .settle)
     }
 
     // aanel: lets the navigator skip the pre-jump window rebuild when the
@@ -680,7 +727,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // One authoritative update at rest, matching the goTo
             // completion paths.
             self.updateCurrentIndexFromViewport()
-            self.delegate?.paginationViewDidUpdateViews(self)
+            self.delegate?.paginationViewDidUpdateViews(self, aanelCause: .unspecified)
         }
         aanelDriftGlideAnimator = animator
         animator.startAnimation()
@@ -825,12 +872,12 @@ extension ContinuousPaginationView: UIScrollViewDelegate {
         aanelTrailingLocationWorkItem?.cancel()
         if nowForEmit - aanelLastLocationEmitAt >= 0.2 {
             aanelLastLocationEmitAt = nowForEmit
-            delegate?.paginationViewDidUpdateViews(self)
+            delegate?.paginationViewDidUpdateViews(self, aanelCause: .unspecified)
         } else {
             let work = DispatchWorkItem { [weak self] in
                 guard let self = self else { return }
                 self.aanelLastLocationEmitAt = Date().timeIntervalSinceReferenceDate
-                self.delegate?.paginationViewDidUpdateViews(self)
+                self.delegate?.paginationViewDidUpdateViews(self, aanelCause: .unspecified)
             }
             aanelTrailingLocationWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)

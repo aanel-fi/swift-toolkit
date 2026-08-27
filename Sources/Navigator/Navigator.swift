@@ -98,6 +98,17 @@ public extension Navigator {
     /// last read page.
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator)
 
+    /// aanel: the same notification, carrying the navigator's own answer to
+    /// "why did this happen".
+    ///
+    /// Every navigator reports through this method; the default implementation
+    /// forwards to the unlabelled one above, so an existing conformer needs no
+    /// change. Only `EPUBNavigatorViewController` in continuous scroll mode
+    /// ever supplies a cause other than `.unspecified` — see
+    /// `AanelLocationCause`. A conformer that implements only this method
+    /// still receives every navigator's changes.
+    func navigator(_ navigator: Navigator, locationDidChange locator: Locator, aanelCause: AanelLocationCause)
+
     /// Called when the navigator jumps to an explicit location, which might break the linear reading progression.
     ///
     /// For example, it is called when clicking on internal links or programmatically calling `go()`, but not when
@@ -126,6 +137,10 @@ public extension Navigator {
 
 public extension NavigatorDelegate {
     func navigator(_ navigator: Navigator, locationDidChange locator: Locator) {}
+
+    func navigator(_ navigator: Navigator, locationDidChange locator: Locator, aanelCause: AanelLocationCause) {
+        self.navigator(navigator, locationDidChange: locator)
+    }
 
     func navigator(_ navigator: Navigator, didJumpTo locator: Locator) {}
 

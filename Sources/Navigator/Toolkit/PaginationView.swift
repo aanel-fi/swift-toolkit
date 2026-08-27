@@ -59,8 +59,27 @@ protocol PaginationViewDelegate: AnyObject {
     /// Called when the page views were updated.
     func paginationViewDidUpdateViews(_ paginationView: any PaginationContainerView)
 
+    /// aanel: the same notification, carrying why the container produced it.
+    ///
+    /// Defaulted in an extension to the unlabelled call above, so an existing
+    /// conformer needs no change and an unlabelled container keeps reporting
+    /// exactly as it does today.
+    func paginationViewDidUpdateViews(
+        _ paginationView: any PaginationContainerView,
+        aanelCause: AanelLocationCause
+    )
+
     /// Returns the number of positions (as in `Publication.positionList`) in the page view at given index.
     func paginationView(_ paginationView: any PaginationContainerView, positionCountAtIndex index: Int) -> Int
+}
+
+extension PaginationViewDelegate {
+    func paginationViewDidUpdateViews(
+        _ paginationView: any PaginationContainerView,
+        aanelCause: AanelLocationCause
+    ) {
+        paginationViewDidUpdateViews(paginationView)
+    }
 }
 
 protocol PaginationContainerView: AnyObject {

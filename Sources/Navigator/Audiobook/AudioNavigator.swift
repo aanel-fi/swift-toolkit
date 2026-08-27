@@ -346,7 +346,7 @@ public final class AudioNavigator: Navigator, Configurable, AudioSessionUser, Lo
             let locator = makeLocator(forTime: time)
             currentLocation = locator
             Task { @MainActor in
-                delegate?.navigator(self, locationDidChange: locator)
+                delegate?.navigator(self, locationDidChange: locator, aanelCause: .unspecified)
             }
         }
 

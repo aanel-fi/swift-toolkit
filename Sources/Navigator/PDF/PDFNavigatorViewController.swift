@@ -362,7 +362,7 @@ open class PDFNavigatorViewController:
 
     @objc private func pageDidChange() {
         if let locator = currentPosition {
-            delegate?.navigator(self, locationDidChange: locator)
+            delegate?.navigator(self, locationDidChange: locator, aanelCause: .unspecified)
         }
     }
 
