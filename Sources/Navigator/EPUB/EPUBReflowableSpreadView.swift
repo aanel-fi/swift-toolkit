@@ -412,8 +412,15 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
           // position was. `findHeadingByTitle` also falls back to a SUBSTRING
           // match, so it rarely fails to find something.
           //
-          // A TOC target — which is what this branch exists for — has a title
-          // and no progression, so it still takes it.
+          // The gate names what the branch was FOR — a locator with a title and
+          // no geometry — rather than what this app sends. Worth being exact,
+          // because the app's own TOC targets carry NO title and
+          // `progression: 0` (`ReaderSheetView.tocLocator`), so this branch was
+          // already unreachable for a TOC tap before the gate and stays so
+          // after it. The gate changes behaviour only for saved reading
+          // positions, which is the whole of the fix; it is written this way so
+          // an upstream consumer whose TOC targets DO carry a title keeps the
+          // behaviour the branch was added for.
           if (locator && locator.title && locations.progression == null) {
             element = findHeadingByTitle(locator.title);
             if (element) {
