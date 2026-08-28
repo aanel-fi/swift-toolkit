@@ -678,7 +678,12 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             guard let progression = locator.locations.progression else {
                 return .nan
             }
-            return max(0, pageHeight * progression - viewportHeight * 0.5)
+            // aanel r16: centred only for a text anchor that did not resolve.
+            // A position locator's progression names the viewport TOP, and
+            // centring it lands the reader half a viewport early — see
+            // `EPUBReflowableSpreadView.aanelProgressionFallbackYOffset`.
+            let centred = locator.text.highlight != nil
+            return max(0, pageHeight * progression - (centred ? viewportHeight * 0.5 : 0))
         }
     }
 

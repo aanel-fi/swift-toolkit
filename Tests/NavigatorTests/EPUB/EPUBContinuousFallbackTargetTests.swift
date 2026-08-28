@@ -45,13 +45,17 @@ struct EPUBContinuousFallbackTargetTests {
         max(pageHeight - viewportHeight, 0)
     }
 
-    private static func fallback(progression: Double?) -> CGFloat {
+    /// Defaults to `centred: true` so every pre-r16 case below keeps asserting
+    /// exactly what it asserted before — the text-anchor path is unchanged, and
+    /// these tests are its record.
+    private static func fallback(progression: Double?, centred: Bool = true) -> CGFloat {
         EPUBReflowableSpreadView.aanelProgressionFallbackYOffset(
             progression: progression,
             documentHeight: documentHeight,
             viewportHeight: viewportHeight,
             insetTop: insetTop,
-            maxOffset: maxOffset
+            maxOffset: maxOffset,
+            centred: centred
         )
     }
 
@@ -111,5 +115,49 @@ struct EPUBContinuousFallbackTargetTests {
             #expect(target >= 0, "progression \(progression) went negative")
             #expect(target <= Self.maxOffset, "progression \(progression) overshot")
         }
+    }
+
+    // MARK: - r16: what the progression is measured FROM
+
+    /// **A position locator names the viewport TOP.** `FR-RD-11.1` in the app
+    /// records `totalProgression` for the top of the view, so centring it on
+    /// restore puts the reader half a viewport EARLIER than where they were.
+    /// Measured 2026-08-28 as the residual behind a reopen landing short.
+    @Test("a position locator lands its progression at the viewport top")
+    func positionLocatorIsTopReferenced() {
+        let target = Self.fallback(progression: 0.5, centred: false)
+
+        // insetTop + documentHeight * 0.5, no half-viewport subtraction.
+        // Tolerance, not `==`: CGFloat, and this file already compares that way
+        // at `progressionEstimatesAreCentred` above.
+        #expect(abs(target - (Self.insetTop + 2000)) < 0.001)
+    }
+
+    /// The paired control. Same progression, same geometry — only the reference
+    /// point differs, and it must still differ by exactly half a viewport, or
+    /// the case above is asserting the arithmetic rather than the rule.
+    @Test("a text anchor that did not resolve is still centred, exactly as before r16")
+    func textAnchorStaysCentred() {
+        let centred = Self.fallback(progression: 0.5, centred: true)
+        let top = Self.fallback(progression: 0.5, centred: false)
+
+        #expect(abs(centred - (Self.insetTop + 2000 - 400)) < 0.001)
+        #expect(abs((top - centred) - Self.viewportHeight * 0.5) < 0.001)
+    }
+
+    /// The clamp still applies to the top-referenced answer — a progression
+    /// near the end must not scroll past the document.
+    @Test("a top-referenced target is still clamped to the document")
+    func topReferencedTargetIsClamped() {
+        #expect(abs(Self.fallback(progression: 1.0, centred: false) - Self.maxOffset) < 0.001)
+        #expect(abs(Self.fallback(progression: 0.0, centred: false) - Self.insetTop) < 0.001)
+    }
+
+    /// Absence of a destination is unchanged by the reference point: with no
+    /// progression there is nowhere to go, whichever way it would be measured.
+    @Test("no progression is still no destination, either way")
+    func noProgressionIsNaNEitherWay() {
+        #expect(Self.fallback(progression: nil, centred: false).isNaN)
+        #expect(Self.fallback(progression: nil, centred: true).isNaN)
     }
 }
