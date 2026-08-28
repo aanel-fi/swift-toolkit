@@ -544,6 +544,38 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         }
     }
 
+    /// aanel r17: how far to shift `contentOffset` when a page's height
+    /// changes, so the text the reader is looking at does not move.
+    ///
+    /// **Only the part of the page ABOVE the viewport displaces the reader.**
+    /// Until r17 this shifted by the WHOLE page's delta whenever the page began
+    /// above the viewport top — which is true the moment the reader is anywhere
+    /// inside it, not only past it. So a reflow of the page being read pushed
+    /// the reader FORWARD by the delta belonging to the text below them, and
+    /// the over-shift is largest near the START of a page, where almost all of
+    /// the growth is below:
+    ///
+    ///     depth into page   shipped   correct   over-shift
+    ///               10%      1000pt     100pt       900pt
+    ///               50%      1000pt     500pt       500pt
+    ///               95%      1000pt     950pt        50pt
+    ///
+    /// (a +25% font step on a 4000pt page). A page entirely above the viewport
+    /// still takes the full delta, and one entirely below still takes none —
+    /// the two cases r16 and earlier got right are unchanged, by construction.
+    static func aanelHeightCompensationShift(
+        pageMinY: CGFloat,
+        viewportMinY: CGFloat,
+        oldHeight: CGFloat,
+        newHeight: CGFloat
+    ) -> CGFloat {
+        guard oldHeight > 0 else { return 0 }
+        let above = viewportMinY - pageMinY
+        guard above > 0 else { return 0 }
+        let fraction = min(above / oldHeight, 1)
+        return (newHeight - oldHeight) * fraction
+    }
+
     private func updatePageHeight(at index: Int) {
         guard let view = loadedViews[index] else {
             return
@@ -565,7 +597,16 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
         let viewportMinY = viewportRect.minY
         pageHeights[index] = newHeight
 
-        if pageMinY < viewportMinY {
+        // aanel r17: shift by the part of the page that is ABOVE the viewport,
+        // not by the whole page's delta. See
+        // `aanelHeightCompensationShift` for why the difference is the bug.
+        let aanelShift = Self.aanelHeightCompensationShift(
+            pageMinY: pageMinY,
+            viewportMinY: viewportMinY,
+            oldHeight: oldHeight,
+            newHeight: newHeight
+        )
+        if aanelShift != 0 {
             isAdjustingContentOffset = true
             // aanel: a direct contentOffset write CANCELS an in-flight
             // animated setContentOffset without ever firing
@@ -581,7 +622,7 @@ final class ContinuousPaginationView: UIView, Loggable, PaginationContainerView 
             // the viewport changed height — freeze it; the next follow
             // recentres.
             aanelCancelDriftGlide()
-            scrollView.contentOffset.y += newHeight - oldHeight
+            scrollView.contentOffset.y += aanelShift
             isAdjustingContentOffset = false
         }
 
