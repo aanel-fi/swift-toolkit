@@ -391,15 +391,34 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
             return rectFromNode(element);
           }
 
-          if (locator && locator.title) {
+          if (text && text.highlight) {
+            var aanelTextRect = rectFromRange(
+              rangeForText(root, text.highlight, text.before, text.after, nearY));
+            if (aanelTextRect) {
+              return aanelTextRect;
+            }
+          }
+
+          // aanel: a TOC title is a LAST resort, and only for a locator that
+          // carries no geometry of its own.
+          //
+          // `EPUBViewportAndLocationCalculator` stamps the resource's
+          // table-of-contents title onto EVERY location the surface reports, so
+          // a SAVED READING POSITION carries one. With this branch ahead of the
+          // geometry, `findHeadingByTitle` matched the chapter heading and every
+          // restore resolved to the top of the chapter, discarding the
+          // `progression` the locator does carry — measured 2026-08-28 as a
+          // reopen landing a full page (or more) back, scaling with how deep the
+          // position was. `findHeadingByTitle` also falls back to a SUBSTRING
+          // match, so it rarely fails to find something.
+          //
+          // A TOC target — which is what this branch exists for — has a title
+          // and no progression, so it still takes it.
+          if (locator && locator.title && locations.progression == null) {
             element = findHeadingByTitle(locator.title);
             if (element) {
               return rectFromNode(element);
             }
-          }
-
-          if (text && text.highlight) {
-            return rectFromRange(rangeForText(root, text.highlight, text.before, text.after, nearY));
           }
         } catch (_) {}
 
@@ -1172,7 +1191,10 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
                 documentHeight: measuredDocumentHeight ?? estimatedDocumentHeight,
                 viewportHeight: viewportHeight,
                 insetTop: aanelContinuousInsets.top,
-                maxOffset: maxOffset
+                maxOffset: maxOffset,
+                // A resolved-anchor miss is centred; a plain position locator
+                // names the viewport top and must not be.
+                centred: locator.text.highlight != nil
             )
         }
     }
@@ -1207,18 +1229,29 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
     /// next sentence rescued it). `.nan` is the same shape
     /// `ContinuousPaginationView.defaultTargetYOffset` already returns for a
     /// progression-less text anchor, so the two fallbacks now agree.
+    /// **`centred` names the reference point the progression is measured FROM,
+    /// and it is not cosmetic (added r16).** A text-anchored locator whose
+    /// anchor did not resolve wants the sentence centred, as everything above
+    /// describes. A *position* locator does not: a saved reading position
+    /// records the viewport TOP, so centring it puts the reader half a viewport
+    /// EARLIER than where they were. That was measured on 2026-08-28 as the
+    /// residual behind a reopen landing short, once the `locator.title` branch
+    /// in `rectFromLocator` stopped resolving those restores to the chapter
+    /// heading outright. Callers pass `locator.text.highlight != nil`, which
+    /// reproduces r15 exactly for every caller that had one.
     static func aanelProgressionFallbackYOffset(
         progression: Double?,
         documentHeight: CGFloat,
         viewportHeight: CGFloat,
         insetTop: CGFloat,
-        maxOffset: CGFloat
+        maxOffset: CGFloat,
+        centred: Bool
     ) -> CGFloat {
         guard let progression else {
             return .nan
         }
-        let centred = documentHeight * progression - viewportHeight * 0.5
-        return min(max(insetTop + centred, 0), maxOffset)
+        let y = documentHeight * progression - (centred ? viewportHeight * 0.5 : 0)
+        return min(max(insetTop + y, 0), maxOffset)
     }
 
     /// aanel: the continuous-scroll read-along centring arithmetic, extracted
