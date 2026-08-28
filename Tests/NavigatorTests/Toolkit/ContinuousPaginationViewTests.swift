@@ -10,6 +10,70 @@ import Testing
 import UIKit
 
 struct ContinuousPaginationViewTests {
+
+    // MARK: - r17: height compensation shifts by what is ABOVE the viewport
+
+    /// The two cases r16 and earlier got right, pinned first so the change
+    /// below is provably scoped to the third.
+    @Test("a page entirely above the viewport still takes the whole delta")
+    func pageFullyAboveTakesFullDelta() {
+        let shift = ContinuousPaginationView.aanelHeightCompensationShift(
+            pageMinY: 0, viewportMinY: 5000, oldHeight: 4000, newHeight: 5000)
+
+        #expect(abs(shift - 1000) < 0.001)
+    }
+
+    @Test("a page entirely below the viewport takes none")
+    func pageBelowTakesNothing() {
+        let shift = ContinuousPaginationView.aanelHeightCompensationShift(
+            pageMinY: 6000, viewportMinY: 5000, oldHeight: 4000, newHeight: 5000)
+
+        #expect(shift == 0)
+    }
+
+    /// **The defect.** Until r17 the reader being anywhere INSIDE the page made
+    /// `pageMinY < viewportMinY` true, and the whole delta was applied — the
+    /// growth below the reader displacing them forward along with the growth
+    /// above. Worst near the start of the page, where almost all of it is below.
+    @Test("a reader inside the page is shifted only by the growth above them")
+    func readerInsidePageShiftsProportionally() {
+        // 10% in: 100pt of the 1000pt growth is above the reader.
+        let shallow = ContinuousPaginationView.aanelHeightCompensationShift(
+            pageMinY: 0, viewportMinY: 400, oldHeight: 4000, newHeight: 5000)
+        #expect(abs(shallow - 100) < 0.001)
+
+        // 95% in: almost all of it is.
+        let deep = ContinuousPaginationView.aanelHeightCompensationShift(
+            pageMinY: 0, viewportMinY: 3800, oldHeight: 4000, newHeight: 5000)
+        #expect(abs(deep - 950) < 0.001)
+
+        // The control that makes the two above mean something: the OLD rule is
+        // depth-independent, so if either matched 1000 the change did nothing.
+        #expect(shallow != 1000)
+        #expect(deep != 1000)
+    }
+
+    /// Shrinking is the same rule with the sign carried through — a smaller
+    /// font must not walk the reader backwards either.
+    @Test("a shrinking page shifts back by the same fraction")
+    func shrinkingPageShiftsBackProportionally() {
+        let shift = ContinuousPaginationView.aanelHeightCompensationShift(
+            pageMinY: 0, viewportMinY: 2000, oldHeight: 4000, newHeight: 3000)
+
+        #expect(abs(shift - -500) < 0.001)
+    }
+
+    /// Degenerate inputs must not produce a NaN offset — a NaN written to
+    /// `contentOffset` is unrecoverable.
+    @Test("a zero-height page yields no shift rather than a NaN")
+    func zeroHeightIsNotANaN() {
+        let shift = ContinuousPaginationView.aanelHeightCompensationShift(
+            pageMinY: 0, viewportMinY: 100, oldHeight: 0, newHeight: 500)
+
+        #expect(shift == 0)
+        #expect(!shift.isNaN)
+    }
+
     @MainActor
     @Test("goToIndex end aligns the trailing edge of a tall page")
     func goToIndexEnd() async {
@@ -351,6 +415,7 @@ private func makePaginationView(delegate: TestPaginationDelegate, frame: CGRect)
     paginationView.frame = frame
     paginationView.layoutIfNeeded()
     return paginationView
+
 }
 
 private final class TestPaginationDelegate: PaginationViewDelegate {
@@ -479,4 +544,5 @@ private final class TestContinuousPageView: UIView, ContinuousPageView {
             return height * progression
         }
     }
+
 }
