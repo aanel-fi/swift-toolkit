@@ -187,6 +187,115 @@ struct ContinuousPaginationViewTests {
         #expect(paginationView.currentIndex == 1)
     }
 
+    /// aanel r18: the container half of the head-of-chapter fix, and the risk
+    /// it carries, pinned rather than hoped about.
+    ///
+    /// `EPUBReflowableSpreadView.aanelCentredYOffset` now returns a NEGATIVE
+    /// local offset for a text-anchored follow whose sentence sits in the first
+    /// half-viewport of a chapter — centring it means showing the tail of the
+    /// PREVIOUS resource above the seam. The container must scroll there.
+    ///
+    /// The consequence, which is the reason this test exists:
+    /// `updateCurrentIndexFromViewport` resolves the index from
+    /// `contentOffset.y + 1`, so once the viewport top crosses back over the
+    /// seam `currentIndex` moves BACKWARD to the previous resource while the
+    /// narrated sentence is in this one. That is the exact mirror of the tail
+    /// case, where the proof in `aanelCentredYOffset` shows the index cannot
+    /// flip forward. Here it does flip, by construction, and anything keying
+    /// off `currentIndex` (read-along's cross-chapter classification) sees the
+    /// previous resource for as long as the viewport top is above the seam.
+    @MainActor
+    @Test("a negative target scrolls back across the seam and takes the index with it")
+    func negativeTargetCrossesTheSeamBackwards() async {
+        let delegate = TestPaginationDelegate(
+            pageHeights: [1000, 1000, 1000],
+            locatorTargetOffset: -300
+        )
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 500)
+        )
+
+        paginationView.reloadAtIndex(1, location: .start, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(abs(paginationView.viewportRect.minY - 1000) < 0.5)
+
+        let didJump = await paginationView.goToIndex(
+            1,
+            location: .locator(Self.followLocator),
+            options: .none
+        )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(didJump)
+        // Page 1 starts at 1000, so the surface sits 300pt back into page 0.
+        #expect(abs(paginationView.viewportRect.minY - 700) < 0.5)
+        // …and the index follows the viewport TOP, not the sentence.
+        #expect(paginationView.currentIndex == 0)
+    }
+
+    /// The paired control for the test above: identical fixture, a POSITIVE
+    /// target of the same magnitude. The index stays on the resource being
+    /// narrated, which is what makes the backward flip above an assertion about
+    /// the sign of the offset rather than about this fixture.
+    @MainActor
+    @Test("a positive target of the same size leaves the index on the narrated resource")
+    func positiveTargetLeavesTheIndexAlone() async {
+        let delegate = TestPaginationDelegate(
+            pageHeights: [1000, 1000, 1000],
+            locatorTargetOffset: 300
+        )
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 500)
+        )
+
+        paginationView.reloadAtIndex(1, location: .start, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        let didJump = await paginationView.goToIndex(
+            1,
+            location: .locator(Self.followLocator),
+            options: .none
+        )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(didJump)
+        #expect(abs(paginationView.viewportRect.minY - 1300) < 0.5)
+        #expect(paginationView.currentIndex == 1)
+    }
+
+    /// The book's own first resource has no previous one to scroll into. A
+    /// negative local offset there is floored by `clampYOffset` against total
+    /// content size, so the landing is the top of the book and the index stays
+    /// at 0 — no separate special case is needed in the spread.
+    @MainActor
+    @Test("a negative target on the first resource lands at the top of the book")
+    func negativeTargetOnFirstResourceIsClampedGlobally() async {
+        let delegate = TestPaginationDelegate(
+            pageHeights: [1000, 1000, 1000],
+            locatorTargetOffset: -300
+        )
+        let paginationView = makePaginationView(
+            delegate: delegate,
+            frame: CGRect(x: 0, y: 0, width: 320, height: 500)
+        )
+
+        paginationView.reloadAtIndex(0, location: .end, pageCount: 3, readingProgression: .ltr)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        #expect(abs(paginationView.viewportRect.minY - 500) < 0.5)
+
+        _ = await paginationView.goToIndex(
+            0,
+            location: .locator(Self.followLocator),
+            options: .none
+        )
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(abs(paginationView.viewportRect.minY - 0) < 0.5)
+        #expect(paginationView.currentIndex == 0)
+    }
+
     @MainActor
     @Test(
         "locator jumps wait briefly for delayed target offsets",
