@@ -37,12 +37,33 @@ struct EPUBContinuousCentringTests {
         max(pageHeight - viewportHeight, 0)
     }
 
-    private static func target(rectTop: CGFloat, rectHeight: CGFloat = 40) -> CGFloat {
+    private static func target(
+        rectTop: CGFloat,
+        rectHeight: CGFloat = 40,
+        mayEnterPreviousResource: Bool = true
+    ) -> CGFloat {
         EPUBReflowableSpreadView.aanelCentredYOffset(
             rectTop: rectTop,
             rectHeight: rectHeight,
             viewportHeight: viewportHeight,
-            insetTop: insetTop
+            insetTop: insetTop,
+            mayEnterPreviousResource: mayEnterPreviousResource
+        )
+    }
+
+    /// The geometry the head-of-chapter defect actually happens in: an
+    /// INTERIOR resource, where `aanelContinuousInsets` zeroes both insets.
+    private static func interiorTarget(
+        rectTop: CGFloat,
+        rectHeight: CGFloat = 40,
+        mayEnterPreviousResource: Bool = true
+    ) -> CGFloat {
+        EPUBReflowableSpreadView.aanelCentredYOffset(
+            rectTop: rectTop,
+            rectHeight: rectHeight,
+            viewportHeight: viewportHeight,
+            insetTop: 0,
+            mayEnterPreviousResource: mayEnterPreviousResource
         )
     }
 
@@ -87,15 +108,95 @@ struct EPUBContinuousCentringTests {
         #expect(third > Self.maxOffset)
     }
 
-    /// The lower bound is load-bearing: a TOC locator resolves at the very top
-    /// of the resource and would otherwise compute `-viewportHeight / 2`,
-    /// landing back inside the PREVIOUS resource.
-    @Test("a target at the top of the resource is floored at zero, never negative")
+    /// The lower bound is load-bearing for a locator that names a PLACE rather
+    /// than a piece of narrated text: a TOC target resolves its fragment at the
+    /// very top of the resource and would otherwise compute `-viewportHeight / 2`,
+    /// landing back inside the PREVIOUS resource — the reader taps a chapter
+    /// and gets the end of the previous one.
+    ///
+    /// This is the PAIRED CONTROL for the read-along tests below: same inputs,
+    /// `mayEnterPreviousResource` flipped, and the answer must still be floored.
+    @Test("a fragment-resolved target at the top of the resource is floored at zero")
     func topOfResourceIsFlooredAtZero() {
-        #expect(Self.target(rectTop: 0, rectHeight: 0) == 0)
-        #expect(Self.target(rectTop: 0) == 0)
+        #expect(Self.target(rectTop: 0, rectHeight: 0, mayEnterPreviousResource: false) == 0)
+        #expect(Self.target(rectTop: 0, mayEnterPreviousResource: false) == 0)
         // Unfloored this would be 60 + 0 + 20 - 400 = -320.
-        #expect(Self.target(rectTop: 100) == 0)
+        #expect(Self.target(rectTop: 100, mayEnterPreviousResource: false) == 0)
+
+        // …and on an interior resource, where the top inset is zero and so
+        // cannot do the flooring by itself.
+        #expect(Self.interiorTarget(rectTop: 0, mayEnterPreviousResource: false) == 0)
+        #expect(Self.interiorTarget(rectTop: 100, mayEnterPreviousResource: false) == 0)
+        #expect(Self.interiorTarget(rectTop: 379, mayEnterPreviousResource: false) == 0)
+    }
+
+    // MARK: - r18: the head of the chapter, the mirror of the r11 tail defect
+
+    /// **The defect.** For an INTERIOR chapter `aanelContinuousInsets.top` is 0,
+    /// so the floor bit whenever `rectTop + visibleMass / 2 < viewportHeight / 2`
+    /// — the first ~half viewport of EVERY chapter mapped to the same target, 0.
+    /// A cross-chapter read-along follow targets exactly that band by
+    /// construction, because narration has just entered the resource:
+    /// `goToIndex`'s `abs(contentOffset.y - targetY) <= 2` convergence check
+    /// then reported success without moving and the highlight walked down a
+    /// stationary page until the floor stopped binding (device-observed
+    /// 2026-08-31, physical iPad: "after chapter boundary the top sentences are
+    /// highlighted and page stays put until active sentence reaches center
+    /// screen, then playback & scroll continue normally").
+    ///
+    /// Exactly the r11 tail defect, at the other end of the chapter.
+    @Test("consecutive sentences in the first half-viewport keep advancing instead of collapsing to the chapter top")
+    func firstHalfViewportKeepsAdvancing() {
+        // With a 40pt sentence the floor binds for every rectTop below 380.
+        #expect(Self.interiorTarget(rectTop: 380) == 0)
+
+        let first = Self.interiorTarget(rectTop: 40)
+        let second = Self.interiorTarget(rectTop: 140)
+        let third = Self.interiorTarget(rectTop: 240)
+
+        // Each sentence resolves somewhere new, so the convergence check in
+        // `goToIndex` keeps moving the surface.
+        #expect(first < second)
+        #expect(second < third)
+        #expect(second - first == 100)
+        #expect(third - second == 100)
+
+        // All three are ABOVE this resource's origin — the target reaches back
+        // into the previous resource, which is what one continuous scroll
+        // surface is for. (40 + 20 - 400 = -340.)
+        #expect(first == -340)
+        #expect(second == -240)
+        #expect(third == -140)
+
+        // The paired control, and the whole defect in three lines: the same
+        // three sentences under the old floor all collapse to the SAME value,
+        // which is what froze the surface.
+        #expect(Self.interiorTarget(rectTop: 40, mayEnterPreviousResource: false) == 0)
+        #expect(Self.interiorTarget(rectTop: 140, mayEnterPreviousResource: false) == 0)
+        #expect(Self.interiorTarget(rectTop: 240, mayEnterPreviousResource: false) == 0)
+    }
+
+    /// The sentence really is centred, not merely "moved": its visible mass
+    /// sits at 50% of the viewport once the container adds `yOffset(before:)`.
+    @Test("a sentence at the head of an interior chapter centres its visible mass")
+    func headOfChapterSentenceIsCentred() {
+        let rectTop: CGFloat = 40
+        let target = Self.interiorTarget(rectTop: rectTop)
+        // Where the sentence's mass centre lands inside the viewport.
+        #expect(rectTop + 20 - target == Self.viewportHeight / 2)
+    }
+
+    /// The band the floor used to swallow is ~half a viewport wide, and it
+    /// widens with the sentence — a taller sentence's mass centre is deeper in.
+    @Test("the swallowed band is half a viewport wide and scales with the sentence")
+    func theSwallowedBandIsHalfAViewport() {
+        // A hairline anchor: floor binds up to viewportHeight / 2.
+        #expect(Self.interiorTarget(rectTop: 399, rectHeight: 0) < 0)
+        #expect(Self.interiorTarget(rectTop: 400, rectHeight: 0) == 0)
+        // A sentence taller than half the viewport contributes the capped
+        // 400pt of mass, so the band shrinks to 200pt.
+        #expect(Self.interiorTarget(rectTop: 199, rectHeight: 5000) < 0)
+        #expect(Self.interiorTarget(rectTop: 200, rectHeight: 5000) == 0)
     }
 
     /// The inset geometries `aanelContinuousInsets` actually produces. Only
@@ -141,7 +242,8 @@ struct EPUBContinuousCentringTests {
                 rectTop: documentHeight,
                 rectHeight: rectHeight,
                 viewportHeight: viewportHeight,
-                insetTop: insets.top
+                insetTop: insets.top,
+                mayEnterPreviousResource: true
             )
 
             // `updateCurrentIndexFromViewport` probes at `contentOffset.y + 1`.

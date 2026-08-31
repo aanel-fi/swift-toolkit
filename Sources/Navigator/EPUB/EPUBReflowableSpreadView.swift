@@ -1171,7 +1171,8 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
                         rectTop: rect.top,
                         rectHeight: rect.height,
                         viewportHeight: viewportHeight,
-                        insetTop: aanelContinuousInsets.top
+                        insetTop: aanelContinuousInsets.top,
+                        mayEnterPreviousResource: locator.text.highlight != nil
                     )
                 }
 
@@ -1281,9 +1282,52 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
     /// bottom of the screen for the last half-viewport of EVERY chapter
     /// (device-reported).
     ///
-    /// The lower bound is load-bearing and stays: a `progression: 0` locator
-    /// (a TOC target) computes `-viewportHeight / 2`, which unclamped would
-    /// land back in the previous resource.
+    /// **The lower bound is conditional (r18).** For a locator that names a
+    /// PLACE rather than narrated text — a TOC/fragment target, whose anchor
+    /// resolves at the very top of the resource — it is load-bearing and stays:
+    /// unclamped it computes `-viewportHeight / 2` and lands back in the
+    /// previous resource, so tapping a chapter would show the end of the one
+    /// before it. `mayEnterPreviousResource: false` keeps exactly that.
+    ///
+    /// For a TEXT-ANCHORED follow it was the mirror of the tail defect above.
+    /// `aanelContinuousInsets` zeroes `insetTop` on every interior resource, so
+    /// the floor bit whenever `rectTop + visibleMass / 2 < viewportHeight / 2`:
+    /// the first ~half viewport of EVERY chapter resolved to the same target,
+    /// `0`. A cross-chapter read-along follow targets exactly that band by
+    /// construction — narration has just entered the resource — so
+    /// `goToIndex`'s `abs(contentOffset.y - targetY) <= 2` convergence check
+    /// reported success without moving and the highlight walked down a
+    /// stationary page until the floor stopped binding. Device-observed
+    /// 2026-08-31 on a physical iPad, as a prediction made in advance: "after
+    /// chapter boundary the top sentences are highlighted and page stays put
+    /// until active sentence reaches center screen, then playback & scroll
+    /// continue normally".
+    ///
+    /// So a text-anchored follow returns a NEGATIVE local offset and the
+    /// surface scrolls back over the seam, revealing the previous resource's
+    /// tail — the same "one continuous surface" argument that removed the upper
+    /// bound, applied at the other end of the chapter. The first resource in
+    /// the book needs no special case: `ContinuousPaginationView.clampYOffset`
+    /// floors the ABSOLUTE offset at 0, and there `baseOffset` is 0.
+    ///
+    /// The asymmetry with the upper bound is real and is NOT a bug:
+    /// `ContinuousPaginationView.updateCurrentIndexFromViewport` resolves the
+    /// index from `contentOffset.y + 1`, so where the proof below shows
+    /// `currentIndex` cannot flip FORWARD past the tail, it does flip BACKWARD
+    /// here for as long as the viewport top sits above the seam. Pinned by
+    /// `ContinuousPaginationViewTests.negativeTargetCrossesTheSeamBackwards`
+    /// with a positive-offset control beside it.
+    ///
+    /// The consuming app already expects that disagreement and is not newly
+    /// exposed by it: `programmaticNav.classifyNav` claims an echo naming
+    /// EITHER endpoint of the navigation, and its `departing` branch is
+    /// documented against this exact geometry — "`onLocationChange`'s href
+    /// names the resource at the viewport TOP … while the follow centres the
+    /// narrated sentence", with each following sentence re-marking the claim so
+    /// the band is covered for as long as it lasts. The host's `crossChapter`
+    /// flag, computed from the same viewport-top href, is no longer forwarded
+    /// to the app at all (`useNativeFollow`). Verified by reading those files,
+    /// not assumed.
     ///
     /// Leaving the upper bound off cannot flip `currentIndex` forward, because
     /// the viewport TOP provably stays inside this resource and
@@ -1311,11 +1355,12 @@ final class EPUBReflowableSpreadView: EPUBSpreadView {
         rectTop: CGFloat,
         rectHeight: CGFloat,
         viewportHeight: CGFloat,
-        insetTop: CGFloat
+        insetTop: CGFloat,
+        mayEnterPreviousResource: Bool
     ) -> CGFloat {
         let visibleMass = min(rectHeight, viewportHeight * 0.5)
-        let centred = rectTop + visibleMass / 2 - viewportHeight * 0.5
-        return max(insetTop + centred, 0)
+        let centred = insetTop + rectTop + visibleMass / 2 - viewportHeight * 0.5
+        return mayEnterPreviousResource ? centred : max(centred, 0)
     }
 
     override func firstVisibleElementLocator(in visibleRect: CGRect) async -> Locator? {
