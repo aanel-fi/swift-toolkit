@@ -1,0 +1,77 @@
+name: Äänel checks
+
+# The inherited `checks.yml` triggers on `push: branches: [main, develop]`, and
+# Äänel work lands on `aanel-main-*` by direct push — so it never fires here.
+# `Tests/` also sits outside the podspec's `source_files` glob, so the pod build
+# never compiles the suites either. Without this workflow the fork's tests run
+# only when someone types `xcodebuild test` locally.
+#
+# The suites this protects are the ones with the most device-observed
+# regressions in the patch: continuous centring, the progression fallback
+# target, and the read-along restore target.
+
+on:
+  push:
+    branches: [ 'aanel-main-*' ]
+  pull_request:
+    branches: [ 'aanel-main-*' ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  platform: ${{ 'iOS Simulator' }}
+  device: ${{ 'iPhone 16 Pro' }}
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+
+jobs:
+  test:
+    name: Build & test
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install xcodegen
+          # Preload the simulator list — xcodebuild is flaky without it.
+          xcrun simctl list
+      - name: Build for testing
+        run: |
+          set -eo pipefail
+          xcodebuild build-for-testing -scheme Readium-Package \
+            -destination "platform=$platform,name=$device" \
+            | if command -v xcpretty &> /dev/null; then xcpretty; else cat; fi
+      - name: Test
+        run: |
+          set -eo pipefail
+          xcodebuild test-without-building -scheme Readium-Package \
+            -destination "platform=$platform,name=$device" \
+            -resultBundlePath TestResults.xcresult \
+            | if command -v xcpretty &> /dev/null; then xcpretty; else cat; fi
+      # A suite that silently stops being compiled would otherwise pass as a
+      # green run. Assert the Äänel suites are present in the result bundle.
+      - name: Assert the Äänel suites actually ran
+        run: |
+          set -eo pipefail
+          for suite in EPUBContinuousCentringTests \
+                       EPUBContinuousFallbackTargetTests \
+                       EPUBReadAlongRestoreTargetTests; do
+            if ! xcrun xcresulttool get test-results tests \
+                 --path TestResults.xcresult --format json \
+                 | grep -q "$suite"; then
+              echo "::error::$suite did not run — it is no longer reaching the test target"
+              exit 1
+            fi
+            echo "ok: $suite ran"
+          done
+      - name: Upload result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+          retention-days: 7
