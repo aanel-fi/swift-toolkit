@@ -17,10 +17,16 @@ import WebKit
     // MARK: - WebView Customization
 
     func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController)
+
+    /// Called after the current spread finished loading and the navigator
+    /// injected its stored decoration templates and decorations.
+    func navigatorDidLoadCurrentSpread(_ navigator: EPUBNavigatorViewController)
 }
 
 public extension EPUBNavigatorDelegate {
     func navigator(_ navigator: EPUBNavigatorViewController, setupUserScripts userContentController: WKUserContentController) {}
+
+    func navigatorDidLoadCurrentSpread(_ navigator: EPUBNavigatorViewController) {}
 }
 
 public typealias EPUBContentInsets = (top: CGFloat, bottom: CGFloat)
@@ -1565,6 +1571,11 @@ extension EPUBNavigatorViewController: EPUBSpreadViewDelegate {
         }
 
         await spreadView.evaluateScript("(function() {\n\(script)\n})();")
+
+        guard paginationView?.currentView == spreadView else {
+            return
+        }
+        delegate?.navigatorDidLoadCurrentSpread(self)
     }
 
     func spreadView(_ spreadView: EPUBSpreadView, didReceive event: PointerEvent) {
